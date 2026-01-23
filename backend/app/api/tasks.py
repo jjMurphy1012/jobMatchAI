@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, date
@@ -60,10 +61,10 @@ async def get_daily_tasks(db: AsyncSession = Depends(get_db)):
     """Get today's daily tasks."""
     today = datetime.now(eastern).date()
 
-    # Get today's tasks with job info
+    # Get today's tasks with job info (eager load job relationship)
     query = (
         select(DailyTask)
-        .join(Job)
+        .options(selectinload(DailyTask.job))
         .where(func.date(DailyTask.date) == today)
         .order_by(DailyTask.task_order)
     )
@@ -108,7 +109,11 @@ async def get_daily_tasks(db: AsyncSession = Depends(get_db)):
 @router.put("/{task_id}/complete")
 async def complete_task(task_id: str, db: AsyncSession = Depends(get_db)):
     """Mark a daily task as completed."""
-    result = await db.execute(select(DailyTask).where(DailyTask.id == task_id))
+    result = await db.execute(
+        select(DailyTask)
+        .options(selectinload(DailyTask.job))
+        .where(DailyTask.id == task_id)
+    )
     task = result.scalar_one_or_none()
 
     if not task:
@@ -142,7 +147,11 @@ async def complete_task(task_id: str, db: AsyncSession = Depends(get_db)):
 @router.put("/{task_id}/uncomplete")
 async def uncomplete_task(task_id: str, db: AsyncSession = Depends(get_db)):
     """Unmark a daily task as completed."""
-    result = await db.execute(select(DailyTask).where(DailyTask.id == task_id))
+    result = await db.execute(
+        select(DailyTask)
+        .options(selectinload(DailyTask.job))
+        .where(DailyTask.id == task_id)
+    )
     task = result.scalar_one_or_none()
 
     if not task:

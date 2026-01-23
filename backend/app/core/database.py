@@ -35,7 +35,12 @@ async def get_db() -> AsyncSession:
 
 async def init_db():
     """Initialize database tables."""
+    # Note: Currently using JSON for embeddings (portable)
+    # For production with pgvector, uncomment the following:
+    # from sqlalchemy import text
+    # async with engine.begin() as conn:
+    #     await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
     async with engine.begin() as conn:
-        # Enable pgvector extension
-        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
         await conn.run_sync(Base.metadata.create_all)
+    print("✓ Database tables created")

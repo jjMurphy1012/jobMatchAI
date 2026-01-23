@@ -111,6 +111,8 @@ class JobMatchingAgent:
             return state
 
         prefs = state["preferences"]
+        logger.info(f"Searching jobs with keywords: {prefs['keywords']}, location: {prefs.get('location')}, is_intern: {prefs.get('is_intern')}")
+
         jobs = await self.linkedin_service.search_jobs(
             keywords=prefs["keywords"],
             location=prefs.get("location"),
@@ -118,11 +120,16 @@ class JobMatchingAgent:
             is_intern=prefs.get("is_intern", False)
         )
 
+        logger.info(f"LinkedIn returned {len(jobs)} jobs")
         return {**state, "raw_jobs": jobs}
 
     async def _analyze_matches(self, state: AgentState) -> AgentState:
         """Analyze job-resume match scores using LLM."""
-        if state.get("error") or not state.get("raw_jobs"):
+        raw_jobs = state.get("raw_jobs", [])
+        logger.info(f"Analyzing {len(raw_jobs)} jobs for match scores...")
+
+        if state.get("error") or not raw_jobs:
+            logger.warning("No jobs to analyze or error occurred")
             return {**state, "scored_jobs": []}
 
         resume = state["resume_text"]
@@ -193,32 +200,47 @@ JSON only, no markdown:
             return {"score": 50, "reason": "Unable to analyze", "matched_skills": [], "missing_skills": []}
 
     async def _filter_and_adjust(self, state: AgentState) -> AgentState:
-        """Filter jobs by threshold and adjust if needed."""
+        """Filter jobs by threshold, adjust threshold if needed for next iteration."""
         threshold = state["threshold"]
         scored_jobs = state.get("scored_jobs", [])
 
+        # Filter jobs by current threshold
         matched = [j for j in scored_jobs if j["match_score"] >= threshold]
+        logger.info(f"Filtering: threshold={threshold}, scored={len(scored_jobs)}, matched={len(matched)}")
+
+        # Determine next threshold (for potential retry)
+        next_threshold = threshold
+        if len(matched) < settings.TARGET_JOBS and threshold > settings.MIN_THRESHOLD:
+            next_threshold = threshold - settings.THRESHOLD_STEP
+            logger.info(f"Lowering threshold: {threshold} -> {next_threshold}")
 
         return {
             **state,
             "matched_jobs": matched,
-            "threshold": threshold
+            "threshold": next_threshold  # Update threshold for next iteration
         }
 
     def _should_continue(self, state: AgentState) -> str:
         """Decide whether to continue, retry with lower threshold, or end."""
         matched = state.get("matched_jobs", [])
         threshold = state["threshold"]
+        scored_jobs = state.get("scored_jobs", [])
 
+        # If we have enough matches, generate content
         if len(matched) >= settings.TARGET_JOBS:
             return "generate"
-        elif threshold > settings.MIN_THRESHOLD:
-            # Lower threshold and retry
-            state["threshold"] = threshold - settings.THRESHOLD_STEP
-            return "retry"
-        else:
-            # Can't lower threshold anymore, proceed with what we have
+
+        # If no scored jobs at all, just proceed with what we have
+        if not scored_jobs:
             return "generate"
+
+        # Check if we can still lower threshold (threshold was already lowered in filter_and_adjust)
+        # If threshold hasn't changed from MIN, we've hit the bottom
+        if threshold <= settings.MIN_THRESHOLD:
+            return "generate"
+
+        # Otherwise retry with the new (already lowered) threshold
+        return "retry"
 
     async def _generate_content(self, state: AgentState) -> AgentState:
         """Generate cover letters for matched jobs."""
@@ -322,8 +344,12 @@ Do not include placeholders like [Your Name] - write it ready to use.
             "error": None
         }
 
+        # Configure with higher recursion limit for adaptive threshold iterations
+        config = {"recursion_limit": 50}
+
         try:
-            final_state = await workflow.ainvoke(initial_state)
+            logger.info("Starting job matching workflow...")
+            final_state = await workflow.ainvoke(initial_state, config=config)
             return {
                 "success": True,
                 "jobs_found": len(final_state.get("matched_jobs", [])),

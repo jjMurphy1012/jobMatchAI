@@ -1,9 +1,14 @@
-from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime, Float, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime, Float, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 import uuid
+
+# Note: Using JSON for embeddings for portability
+# For production with pgvector, you can change this to:
+# from pgvector.sqlalchemy import Vector
+# VECTOR_TYPE = Vector(1536)
+VECTOR_TYPE = JSON  # Store embeddings as JSON array
 
 
 def generate_uuid():
@@ -18,7 +23,7 @@ class Resume(Base):
     file_path = Column(String, nullable=False)
     file_name = Column(String, nullable=False)
     content = Column(Text, nullable=True)  # Parsed text content
-    embedding = Column(Vector(1536), nullable=True)  # OpenAI ada-002 dimension
+    embedding = Column(VECTOR_TYPE, nullable=True)  # OpenAI ada-002 dimension
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -33,7 +38,7 @@ class ResumeChunk(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     resume_id = Column(String, ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False)
     content = Column(Text, nullable=False)
-    embedding = Column(Vector(1536), nullable=True)
+    embedding = Column(VECTOR_TYPE, nullable=True)
     chunk_index = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
