@@ -34,6 +34,9 @@ yarn-error.log*
 frontend/dist/
 frontend/build/
 *.local
+*.tsbuildinfo
+*.d.ts
+!frontend/src/**/*.d.ts
 
 # Environment
 .env
