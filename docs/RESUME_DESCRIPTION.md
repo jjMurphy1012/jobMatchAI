@@ -2,7 +2,7 @@
 
 ## For Resume Use
 
-### ⭐ Recommended: 5 Bullets (Best fit for standard resume)
+### ⭐ Recommended: 6 Bullets (Best fit for standard resume)
 
 **Job Matching AI** | Personal Project | Jan 2026
 
@@ -11,10 +11,22 @@
 - Developed full-stack application with **FastAPI** async backend and **React/TypeScript** frontend, featuring PDF resume upload with text extraction, job preference configuration, and interactive task dashboard with completion tracking
 - Engineered automated job discovery pipeline integrating **LinkedIn API** with APScheduler cron jobs, delivering daily **SendGrid** email notifications at 7:00 AM EST with AI-generated cover letters for each matched position
 - Containerized application using **Docker** multi-stage builds and deployed to **Railway** cloud platform with PostgreSQL pgvector service, implementing CI/CD through GitHub integration and 7-day automated data retention cleanup
+- Adopted Agile development with **Claude Code** as AI pair programmer, leveraging custom **Claude Skills** for code review and **MCP (Model Context Protocol)** integration with LinkedIn for rapid API testing and Figma for design-to-code frontend prototyping
 
 ---
 
-### Option 1: Full Description (6 bullets)
+### Option 1: Condensed 5 Bullets (If space is tight)
+
+**Job Matching AI** | Personal Project | Jan 2026
+- Architected a multi-step AI agent using **LangGraph** with stateful workflow management, orchestrating autonomous job matching pipeline from resume parsing to LinkedIn search, GPT-4o-mini compatibility scoring, and cover letter generation
+- Implemented **RAG** pipeline using LangChain and PostgreSQL **pgvector**, with adaptive threshold algorithm (70%→30%) to guarantee 10 daily personalized job recommendations with AI-generated cover letters
+- Developed full-stack application with **FastAPI** async backend and **React/TypeScript** frontend, integrating **LinkedIn API** with APScheduler cron jobs and **SendGrid** for daily email notifications at 7:00 AM EST
+- Containerized with **Docker** multi-stage builds and deployed to **Railway** cloud platform, implementing CI/CD through GitHub integration and 7-day automated data retention cleanup
+- Adopted Agile development with **Claude Code** and **MCP (Model Context Protocol)** for LinkedIn API testing and Figma design-to-code prototyping
+
+---
+
+### Option 2: Full Description (7 bullets - for detailed applications)
 
 **Job Matching AI** | Personal Project | Jan 2026
 - Architected an intelligent job recommendation system using **LangGraph** to build a multi-step AI agent that orchestrates resume parsing, job searching, match analysis, and cover letter generation with stateful workflow management
@@ -23,21 +35,22 @@
 - Built full-stack application with **FastAPI** backend and **React/TypeScript** frontend, featuring PDF resume upload, preference configuration (intern/sponsor status), and interactive daily task dashboard with completion tracking
 - Engineered automated job discovery pipeline integrating LinkedIn API with APScheduler cron jobs, delivering daily email notifications at 7:00 AM EST with personalized cover letters for each matched position
 - Containerized with **Docker** multi-stage builds and deployed to **Railway** cloud platform, implementing CI/CD through GitHub integration with automated PostgreSQL pgvector provisioning
+- Leveraged **Claude Code** as AI pair programmer with custom **Claude Skills**, utilizing **MCP (Model Context Protocol)** to integrate LinkedIn for rapid API testing and Figma for design-to-code frontend prototyping
 
 ---
 
-### Option 2: Condensed Description (3 bullets)
+### Option 3: Condensed Description (3 bullets)
 
 **Job Matching AI** | Personal Project | Jan 2026
 - Built AI-powered job recommendation system using **LangGraph** for multi-step agent orchestration and **RAG** with pgvector for semantic resume-job matching, leveraging GPT-4o-mini for compatibility analysis and cover letter generation
 - Developed full-stack application with FastAPI/React/TypeScript featuring adaptive threshold algorithm (70%→30%) that guarantees 10 daily job recommendations with SendGrid email notifications at 7:00 AM EST
-- Deployed to **Railway** with Docker containerization, PostgreSQL pgvector service, and APScheduler cron jobs for automated daily job discovery and 7-day data retention cleanup
+- Deployed to **Railway** with Docker containerization and CI/CD, utilizing **Claude Code** with **MCP** for LinkedIn API testing and Figma design-to-code prototyping
 
 ---
 
-### Option 3: One-liner (for skills section or brief mention)
+### Option 4: One-liner (for skills section or brief mention)
 
-**Job Matching AI**: LangGraph-based AI agent with RAG pipeline for automated job matching, cover letter generation, and daily email recommendations (FastAPI, React, PostgreSQL/pgvector, Docker, Railway)
+**Job Matching AI**: LangGraph-based AI agent with RAG pipeline for automated job matching, cover letter generation, and daily email recommendations; built with Claude Code + MCP for rapid prototyping (FastAPI, React, PostgreSQL/pgvector, Docker, Railway)
 
 ---
 
