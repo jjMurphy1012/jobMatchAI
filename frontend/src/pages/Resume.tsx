@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Upload, FileText, Trash2, CheckCircle } from 'lucide-react'
+import { Upload, Trash2, CheckCircle } from 'lucide-react'
 import { resumeApi, ResumeResponse } from '../api/client'
 
 export default function Resume() {

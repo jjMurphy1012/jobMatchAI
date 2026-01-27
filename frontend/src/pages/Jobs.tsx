@@ -1,241 +1,127 @@
-import { useEffect, useState } from 'react'
-import { RefreshCw, ExternalLink, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
-import { jobsApi, JobResponse } from '../api/client'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { RefreshCw, Search } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { jobsApi } from '../api/client'
+import { JobCard } from '../components/jobs/JobCard'
+import { JobDetails } from '../components/jobs/JobDetails'
 
 export default function Jobs() {
-  const [jobs, setJobs] = useState<JobResponse[]>([])
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [lastSearch, setLastSearch] = useState<string | null>(null)
   const [expandedJob, setExpandedJob] = useState<string | null>(null)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
-  useEffect(() => {
-    loadJobs()
-  }, [])
+  // Data Fetching
+  const { data, isLoading } = useQuery({
+    queryKey: ['jobs'],
+    queryFn: () => jobsApi.list(0, 50),
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+  })
 
-  async function loadJobs() {
-    setLoading(true)
-    const result = await jobsApi.list(0, 20)
-    if (result.data) {
-      setJobs(result.data.jobs)
-      setLastSearch(result.data.last_search)
+  // Refresh Mutation
+  const refreshMutation = useMutation({
+    mutationFn: jobsApi.refresh,
+    onSuccess: () => {
+      // Invalidate and refetch jobs after a short delay to allow backend to process
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['jobs'] })
+      }, 2000)
+      
+      // Simple feedback for the user
+      alert("Search started! The AI is now scanning for new positions. This might take a few moments.")
+    },
+    onError: (error: any) => {
+      console.error('Search failed:', error)
+      alert(`Failed to start search: ${error.message || 'Unknown error'}. Please try again later.`)
     }
-    setLoading(false)
-  }
+  })
 
-  async function handleRefresh() {
-    setRefreshing(true)
-    await jobsApi.refresh()
-    // Wait a bit for the background job to start
-    setTimeout(() => {
-      loadJobs()
-      setRefreshing(false)
-    }, 2000)
-  }
-
-  function toggleExpand(jobId: string) {
+  const toggleExpand = (jobId: string) => {
     setExpandedJob(expandedJob === jobId ? null : jobId)
   }
 
-  async function copyToClipboard(text: string, jobId: string) {
-    await navigator.clipboard.writeText(text)
-    setCopiedId(jobId)
-    setTimeout(() => setCopiedId(null), 2000)
-  }
-
-  function parseSkills(skillsJson: string | undefined): string[] {
-    if (!skillsJson) return []
-    try {
-      return JSON.parse(skillsJson)
-    } catch {
-      return []
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-      </div>
-    )
-  }
+  const jobs = data?.data?.jobs || []
+  const lastSearch = data?.data?.last_search
 
   return (
-    <div className="max-w-4xl">
-      <div className="flex justify-between items-center mb-8">
+    <div className="max-w-5xl mx-auto space-y-8">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Matched Jobs</h1>
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 pb-1">
+            Matched Opportunities
+          </h1>
+          <p className="text-slate-500 mt-2 text-lg">
+            AI-curated positions based on your profile
+          </p>
           {lastSearch && (
-            <p className="text-sm text-gray-500 mt-1">
-              Last searched: {new Date(lastSearch).toLocaleString()}
+            <p className="text-sm text-slate-400 mt-1 font-medium">
+              Last updated: {new Date(lastSearch).toLocaleString()}
             </p>
           )}
         </div>
+
         <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="btn-primary flex items-center gap-2"
+          onClick={() => refreshMutation.mutate()}
+          disabled={refreshMutation.isPending}
+          className="btn-primary flex items-center gap-2.5 shadow-indigo-500/25"
         >
-          <RefreshCw className={refreshing ? 'animate-spin' : ''} size={18} />
-          {refreshing ? 'Searching...' : 'Search Now'}
+          <RefreshCw 
+            className={`w-5 h-5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} 
+          />
+          {refreshMutation.isPending ? 'Analyzing Market...' : 'Run New Search'}
         </button>
       </div>
 
-      {jobs.length === 0 ? (
-        <div className="card text-center py-12">
-          <p className="text-gray-500 mb-4">No matched jobs yet.</p>
-          <p className="text-sm text-gray-400">
-            Click "Search Now" to find jobs matching your profile.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {jobs.map((job) => (
-            <div key={job.id} className="card">
-              {/* Job Header */}
-              <div className="flex items-start gap-4">
-                {/* Match Score */}
-                <div
-                  className={`flex-shrink-0 w-16 h-16 rounded-xl flex flex-col items-center justify-center ${
-                    job.match_score >= 80
-                      ? 'bg-green-100 text-green-700'
-                      : job.match_score >= 60
-                      ? 'bg-yellow-100 text-yellow-700'
-                      : 'bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  <span className="text-xl font-bold">{job.match_score}</span>
-                  <span className="text-xs">Match</span>
-                </div>
-
-                {/* Job Info */}
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-gray-900 text-lg">{job.title}</h3>
-                  <p className="text-gray-600">{job.company}</p>
-                  <div className="flex flex-wrap gap-2 mt-2 text-sm text-gray-500">
-                    {job.location && <span>{job.location}</span>}
-                    {job.salary && (
-                      <>
-                        <span>•</span>
-                        <span>{job.salary}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex-shrink-0 flex gap-2">
-                  {job.url && (
-                    <a
-                      href={job.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn-primary flex items-center gap-2"
-                    >
-                      Apply
-                      <ExternalLink size={16} />
-                    </a>
-                  )}
-                  <button
-                    onClick={() => toggleExpand(job.id)}
-                    className="btn-secondary flex items-center gap-1"
-                  >
-                    Details
-                    {expandedJob === job.id ? (
-                      <ChevronUp size={16} />
-                    ) : (
-                      <ChevronDown size={16} />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Expanded Details */}
-              {expandedJob === job.id && (
-                <div className="mt-6 pt-6 border-t border-gray-200 space-y-6">
-                  {/* Match Reason */}
-                  {job.match_reason && (
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Why You Match</h4>
-                      <p className="text-gray-600">{job.match_reason}</p>
-                    </div>
-                  )}
-
-                  {/* Skills */}
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Matched Skills */}
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Matched Skills</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {parseSkills(job.matched_skills).map((skill, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-1 bg-green-100 text-green-700 text-sm rounded"
-                          >
-                            {skill}
-                          </span>
-                        ))}
-                        {parseSkills(job.matched_skills).length === 0 && (
-                          <span className="text-gray-400 text-sm">None identified</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Missing Skills */}
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Skills to Develop</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {parseSkills(job.missing_skills).map((skill, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-1 bg-orange-100 text-orange-700 text-sm rounded"
-                          >
-                            {skill}
-                          </span>
-                        ))}
-                        {parseSkills(job.missing_skills).length === 0 && (
-                          <span className="text-gray-400 text-sm">None - you're a great fit!</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Cover Letter */}
-                  {job.cover_letter && (
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <h4 className="font-medium text-gray-900">Generated Cover Letter</h4>
-                        <button
-                          onClick={() => copyToClipboard(job.cover_letter!, job.id)}
-                          className="text-primary-600 hover:text-primary-700 flex items-center gap-1 text-sm"
-                        >
-                          {copiedId === job.id ? (
-                            <>
-                              <Check size={16} />
-                              Copied!
-                            </>
-                          ) : (
-                            <>
-                              <Copy size={16} />
-                              Copy
-                            </>
-                          )}
-                        </button>
-                      </div>
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <p className="text-gray-700 whitespace-pre-wrap text-sm">
-                          {job.cover_letter}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+      {/* Content Area */}
+      <div className="relative min-h-[400px]">
+        {isLoading ? (
+          // Skeleton Loading State
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-40 rounded-2xl bg-white/40 animate-pulse border border-white/50" />
+            ))}
+          </div>
+        ) : jobs.length === 0 ? (
+          // Empty State
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-20 bg-white/50 backdrop-blur-sm rounded-3xl border border-dashed border-slate-300"
+          >
+            <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
+              <Search className="w-10 h-10 text-slate-400" />
             </div>
-          ))}
-        </div>
-      )}
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">No jobs found yet</h3>
+            <p className="text-slate-500 max-w-sm text-center mb-8">
+              Click "Run New Search" to let our AI scan the market for positions matching your resume.
+            </p>
+            <button
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending}
+              className="px-6 py-3 bg-white text-primary-600 border border-primary-200 rounded-xl font-medium hover:bg-primary-50 transition-colors"
+            >
+              Start Search
+            </button>
+          </motion.div>
+        ) : (
+          // Job List
+          <div className="space-y-4">
+            <AnimatePresence mode="popLayout">
+              {jobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  isExpanded={expandedJob === job.id}
+                  onToggleExpand={() => toggleExpand(job.id)}
+                >
+                  <JobDetails job={job} />
+                </JobCard>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
+
