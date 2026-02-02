@@ -78,3 +78,9 @@ logs/
 *.bak
 *.tmp
 .cache/
+
+# Deployment docs (local reference only)
+RAILWAY_DEPLOYMENT.md
+QUICK_START_RAILWAY.md
+.env.railway.example
+scripts/check_railway_config.sh
