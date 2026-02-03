@@ -13,9 +13,12 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
 
-    # LinkedIn
+    # LinkedIn (legacy - no longer used)
     LINKEDIN_EMAIL: str = ""
     LINKEDIN_PASSWORD: str = ""
+
+    # RapidAPI (for JSearch job search API)
+    RAPIDAPI_KEY: Optional[str] = None
 
     # Email (optional for now)
     SENDGRID_API_KEY: Optional[str] = None

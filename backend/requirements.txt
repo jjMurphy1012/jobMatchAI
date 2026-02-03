@@ -20,8 +20,7 @@ openai==1.59.5
 pypdf==5.1.0
 python-docx==1.1.2
 
-# LinkedIn
-linkedin-api==2.2.0
+# Job Search API (httpx already included in Utilities)
 
 # Scheduling
 apscheduler==3.10.4
