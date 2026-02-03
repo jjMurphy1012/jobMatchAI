@@ -6,7 +6,12 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
-    future=True
+    future=True,
+    # Disable prepared statement cache for Supabase Transaction Pooler compatibility
+    connect_args={
+        "prepared_statement_cache_size": 0,
+        "statement_cache_size": 0,
+    }
 )
 
 async_session_maker = async_sessionmaker(
