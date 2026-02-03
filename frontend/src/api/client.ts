@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL || '';
+// In production, use the Backend URL; in development, use relative path for proxy
+const API_BASE = import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? 'https://jobmatchai-production.up.railway.app' : '');
 
 interface ApiResponse<T> {
   data?: T;
