@@ -1,16 +1,19 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 from app.core.config import settings
 
 
+# Use NullPool for serverless/pooler environments like Supabase Transaction Pooler
+# This avoids prepared statement conflicts
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     future=True,
-    # Disable prepared statement cache for Supabase Transaction Pooler compatibility
+    poolclass=NullPool,
     connect_args={
-        "prepared_statement_cache_size": 0,
         "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
     }
 )
 
