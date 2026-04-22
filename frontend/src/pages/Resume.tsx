@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Upload, Trash2, CheckCircle } from 'lucide-react'
+import { Upload, Trash2, CheckCircle, ExternalLink } from 'lucide-react'
 import { resumeApi, ResumeResponse } from '../api/client'
 
 export default function Resume() {
@@ -110,6 +110,11 @@ export default function Resume() {
               <p className="text-sm text-gray-500 mt-1">
                 Uploaded {new Date(resume.uploaded_at).toLocaleDateString()}
               </p>
+              {resume.storage_provider && (
+                <p className="text-sm text-gray-500 mt-1">
+                  Stored via {resume.storage_provider}
+                </p>
+              )}
 
               {resume.content_preview && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -118,6 +123,16 @@ export default function Resume() {
                     {resume.content_preview}...
                   </p>
                 </div>
+              )}
+
+              {resume.download_url && (
+                <button
+                  onClick={() => window.open(resume.download_url, '_blank')}
+                  className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary-700 hover:text-primary-800"
+                >
+                  Open uploaded file
+                  <ExternalLink size={14} />
+                </button>
               )}
             </div>
             <button

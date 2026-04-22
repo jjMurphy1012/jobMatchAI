@@ -7,7 +7,7 @@ import logging
 
 from app.core.config import settings
 from app.core.database import async_session_maker
-from app.models.models import Job, DailyTask
+from app.models.models import DailyTask, Job, JobPreference, Resume, User
 from app.services.agent_service import JobMatchingAgent
 
 logger = logging.getLogger(__name__)
@@ -72,15 +72,23 @@ class SchedulerService:
         logger.info("Starting daily job push...")
 
         try:
-            # Run the job matching agent
-            agent = JobMatchingAgent()
-            result = await agent.run()
+            async with async_session_maker() as db:
+                user_result = await db.execute(
+                    select(User.id)
+                    .join(Resume, Resume.user_id == User.id)
+                    .join(JobPreference, JobPreference.user_id == User.id)
+                    .where(User.is_disabled.is_(False))
+                    .distinct()
+                )
+                user_ids = user_result.scalars().all()
 
-            if result.get("success"):
-                logger.info(f"Daily push complete: {result.get('jobs_found')} jobs found")
-                # TODO: Send email notification when email service is implemented
-            else:
-                logger.error(f"Daily push failed: {result.get('error')}")
+            for user_id in user_ids:
+                agent = JobMatchingAgent(user_id=user_id)
+                result = await agent.run()
+                if result.get("success"):
+                    logger.info(f"Daily push complete for user {user_id}: {result.get('jobs_found')} jobs found")
+                else:
+                    logger.error(f"Daily push failed for user {user_id}: {result.get('error')}")
 
         except Exception as e:
             logger.error(f"Daily job push error: {e}")

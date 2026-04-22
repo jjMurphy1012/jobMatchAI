@@ -7,9 +7,10 @@ from typing import List, Optional
 from datetime import datetime, date
 import pytz
 
+from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.config import settings
-from app.models.models import DailyTask, Job
+from app.models.models import DailyTask, Job, User
 
 router = APIRouter()
 
@@ -57,15 +58,19 @@ class TaskStatsResponse(BaseModel):
 
 
 @router.get("", response_model=DailyTasksListResponse)
-async def get_daily_tasks(db: AsyncSession = Depends(get_db)):
+async def get_daily_tasks(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Get today's daily tasks."""
     today = datetime.now(eastern).date()
 
     # Get today's tasks with job info (eager load job relationship)
     query = (
         select(DailyTask)
+        .join(DailyTask.job)
         .options(selectinload(DailyTask.job))
-        .where(func.date(DailyTask.date) == today)
+        .where(func.date(DailyTask.date) == today, Job.user_id == current_user.id)
         .order_by(DailyTask.task_order)
     )
     result = await db.execute(query)
@@ -107,12 +112,17 @@ async def get_daily_tasks(db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{task_id}/complete")
-async def complete_task(task_id: str, db: AsyncSession = Depends(get_db)):
+async def complete_task(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Mark a daily task as completed."""
     result = await db.execute(
         select(DailyTask)
+        .join(DailyTask.job)
         .options(selectinload(DailyTask.job))
-        .where(DailyTask.id == task_id)
+        .where(DailyTask.id == task_id, Job.user_id == current_user.id)
     )
     task = result.scalar_one_or_none()
 
@@ -131,7 +141,9 @@ async def complete_task(task_id: str, db: AsyncSession = Depends(get_db)):
     # Check if all tasks are completed
     today = datetime.now(eastern).date()
     all_tasks = await db.execute(
-        select(DailyTask).where(func.date(DailyTask.date) == today)
+        select(DailyTask)
+        .join(DailyTask.job)
+        .where(func.date(DailyTask.date) == today, Job.user_id == current_user.id)
     )
     tasks = all_tasks.scalars().all()
     all_completed = all(t.is_completed for t in tasks)
@@ -145,12 +157,17 @@ async def complete_task(task_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{task_id}/uncomplete")
-async def uncomplete_task(task_id: str, db: AsyncSession = Depends(get_db)):
+async def uncomplete_task(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Unmark a daily task as completed."""
     result = await db.execute(
         select(DailyTask)
+        .join(DailyTask.job)
         .options(selectinload(DailyTask.job))
-        .where(DailyTask.id == task_id)
+        .where(DailyTask.id == task_id, Job.user_id == current_user.id)
     )
     task = result.scalar_one_or_none()
 
@@ -168,12 +185,19 @@ async def uncomplete_task(task_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/stats", response_model=TaskStatsResponse)
-async def get_task_stats(db: AsyncSession = Depends(get_db)):
+async def get_task_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Get task completion statistics."""
     today = datetime.now(eastern).date()
 
     # Today's stats
-    today_query = select(DailyTask).where(func.date(DailyTask.date) == today)
+    today_query = (
+        select(DailyTask)
+        .join(DailyTask.job)
+        .where(func.date(DailyTask.date) == today, Job.user_id == current_user.id)
+    )
     today_result = await db.execute(today_query)
     today_tasks = today_result.scalars().all()
 

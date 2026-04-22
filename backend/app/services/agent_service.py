@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.database import async_session_maker
 from app.models.models import Resume, JobPreference, Job, DailyTask
 from app.services.linkedin_service import LinkedInService
+from app.services.preference_extractor import PreferenceStructuredFields
 from app.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,8 @@ class AgentState(TypedDict):
 class JobMatchingAgent:
     """LangGraph agent for job matching workflow."""
 
-    def __init__(self):
+    def __init__(self, user_id: str):
+        self.user_id = user_id
         self.llm = ChatOpenAI(
             model="gpt-4o-mini",
             openai_api_key=settings.OPENAI_API_KEY,
@@ -79,28 +81,41 @@ class JobMatchingAgent:
         async with async_session_maker() as db:
             # Get resume
             resume_result = await db.execute(
-                select(Resume).order_by(Resume.uploaded_at.desc()).limit(1)
+                select(Resume)
+                .where(Resume.user_id == self.user_id)
+                .order_by(Resume.uploaded_at.desc())
+                .limit(1)
             )
             resume = resume_result.scalar_one_or_none()
 
             # Get preferences
             pref_result = await db.execute(
-                select(JobPreference).order_by(JobPreference.created_at.desc()).limit(1)
+                select(JobPreference)
+                .where(JobPreference.user_id == self.user_id)
+                .order_by(JobPreference.created_at.desc())
+                .limit(1)
             )
             pref = pref_result.scalar_one_or_none()
 
             if not resume or not pref:
                 return {**state, "error": "Missing resume or preferences"}
 
+            effective_fields = PreferenceStructuredFields.model_validate(pref.effective_fields or {})
+            keyword_text = ", ".join(effective_fields.keywords) or pref.keywords or ""
+            location = effective_fields.locations[0] if effective_fields.locations else pref.location
+            profile_text = pref.raw_text or pref.job_description or ""
+
             return {
                 **state,
                 "resume_text": resume.content or "",
                 "preferences": {
-                    "keywords": pref.keywords,
-                    "location": pref.location,
-                    "is_intern": pref.is_intern,
-                    "need_sponsor": pref.need_sponsor,
-                    "job_description": pref.job_description
+                    "keywords": keyword_text,
+                    "location": location,
+                    "is_intern": effective_fields.is_intern if pref.effective_fields else pref.is_intern,
+                    "need_sponsor": effective_fields.need_sponsor if pref.effective_fields else pref.need_sponsor,
+                    "job_description": profile_text,
+                    "profile_text": profile_text,
+                    "remote_preference": effective_fields.remote_preference if pref.effective_fields else pref.remote_preference,
                 },
                 "threshold": settings.MATCH_THRESHOLD
             }
@@ -133,11 +148,12 @@ class JobMatchingAgent:
             return {**state, "scored_jobs": []}
 
         resume = state["resume_text"]
+        profile_text = state.get("preferences", {}).get("profile_text", "")
         scored_jobs = []
 
         for job in state["raw_jobs"]:
             try:
-                score_data = await self._score_job(resume, job)
+                score_data = await self._score_job(resume, profile_text, job)
                 scored_jobs.append({
                     **job,
                     "match_score": score_data.get("score", 0),
@@ -153,7 +169,7 @@ class JobMatchingAgent:
         scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
         return {**state, "scored_jobs": scored_jobs}
 
-    async def _score_job(self, resume: str, job: dict) -> dict:
+    async def _score_job(self, resume: str, profile_text: str, job: dict) -> dict:
         """Score a single job against the resume."""
         prompt = ChatPromptTemplate.from_messages([
             ("system", "You are a career advisor analyzing job-resume fit. Be objective and precise."),
@@ -162,6 +178,9 @@ Analyze the match between this resume and job posting.
 
 RESUME:
 {resume}
+
+JOB SEARCH PROFILE:
+{profile_text}
 
 JOB:
 Title: {title}
@@ -182,6 +201,7 @@ JSON only, no markdown:
 
         response = await chain.ainvoke({
             "resume": resume[:3000],  # Limit for token efficiency
+            "profile_text": profile_text[:1500],
             "title": job.get("title", ""),
             "company": job.get("company", ""),
             "description": job.get("description", "")[:2000]
@@ -296,13 +316,17 @@ Do not include placeholders like [Your Name] - write it ready to use.
             for i, job_data in enumerate(matched):
                 # Check if job already exists
                 existing = await db.execute(
-                    select(Job).where(Job.linkedin_job_id == job_data.get("linkedin_job_id"))
+                    select(Job).where(
+                        Job.user_id == self.user_id,
+                        Job.linkedin_job_id == job_data.get("linkedin_job_id"),
+                    )
                 )
                 if existing.scalar_one_or_none():
                     continue
 
                 # Create job record
                 job = Job(
+                    user_id=self.user_id,
                     title=job_data["title"],
                     company=job_data["company"],
                     location=job_data.get("location"),

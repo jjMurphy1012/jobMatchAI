@@ -1,78 +1,144 @@
-// In production, use the Backend URL; in development, use relative path for proxy
 const API_BASE = import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? 'https://jobmatchai-production.up.railway.app' : '');
+  (import.meta.env.PROD ? 'https://jobmatchai-production.up.railway.app' : '')
 
 interface ApiResponse<T> {
   data?: T;
   error?: string;
+  status?: number;
+}
+
+let refreshPromise: Promise<boolean> | null = null
+
+function shouldAttemptRefresh(endpoint: string, retryAuth: boolean) {
+  return retryAuth && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/logout'
+}
+
+async function refreshAuthSession(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${API_BASE}/api/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise
+}
+
+async function request(
+  endpoint: string,
+  options?: RequestInit,
+  retryAuth = true,
+): Promise<Response> {
+  const headers = new Headers(options?.headers)
+  if (!(options?.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    credentials: 'include',
+    ...options,
+    headers,
+  })
+
+  if (response.status === 401 && shouldAttemptRefresh(endpoint, retryAuth)) {
+    const refreshed = await refreshAuthSession()
+    if (refreshed) {
+      return request(endpoint, options, false)
+    }
+  }
+
+  return response
 }
 
 async function fetchApi<T>(
   endpoint: string,
-  options?: RequestInit
+  options?: RequestInit,
+  retryAuth = true,
 ): Promise<ApiResponse<T>> {
   try {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-      ...options,
-    });
+    const response = await request(endpoint, options, retryAuth)
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-      return { error: error.detail || 'Request failed' };
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      return { error: error.detail || 'Request failed', status: response.status }
     }
 
-    const data = await response.json();
-    return { data };
-  } catch (err) {
-    return { error: 'Network error' };
+    const data = await response.json()
+    return { data, status: response.status }
+  } catch {
+    return { error: 'Network error', status: 0 }
   }
 }
 
-// Resume API
+export const authApi = {
+  googleLoginUrl: () => `${API_BASE}/api/auth/google/login`,
+  me: () => fetchApi<CurrentUser>('/api/auth/me'),
+  logout: () => fetchApi<AuthMessage>('/api/auth/logout', { method: 'POST' }, false),
+}
+
+export const adminApi = {
+  listUsers: () => fetchApi<AdminUser[]>('/api/admin/users'),
+  updateUserRole: (userId: string, role: 'admin' | 'user') =>
+    fetchApi<AdminUser>(`/api/admin/users/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+}
+
 export const resumeApi = {
   get: () => fetchApi<ResumeResponse>('/api/resume'),
 
   upload: async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
+    const formData = new FormData()
+    formData.append('file', file)
 
     try {
-      const response = await fetch(`${API_BASE}/api/resume`, {
+      const response = await request('/api/resume', {
         method: 'POST',
         body: formData,
-      });
+      })
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
-        return { error: error.detail };
+        const error = await response.json().catch(() => ({ detail: 'Upload failed' }))
+        return { error: error.detail, status: response.status }
       }
 
-      const data = await response.json();
-      return { data };
+      const data = await response.json()
+      return { data, status: response.status }
     } catch {
-      return { error: 'Network error' };
+      return { error: 'Network error', status: 0 }
     }
   },
 
   delete: () => fetchApi('/api/resume', { method: 'DELETE' }),
-};
+}
 
-// Preferences API
 export const preferencesApi = {
   get: () => fetchApi<PreferenceResponse>('/api/preferences'),
+
+  analyze: (rawText: string) =>
+    fetchApi<PreferenceAnalyzeResponse>('/api/preferences/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ raw_text: rawText }),
+    }),
 
   save: (data: PreferenceData) =>
     fetchApi<PreferenceResponse>('/api/preferences', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-};
 
-// Jobs API
+  patchFields: (data: PreferencePatchData) =>
+    fetchApi<PreferenceResponse>('/api/preferences/fields', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+}
+
 export const jobsApi = {
   list: (skip = 0, limit = 10) =>
     fetchApi<JobListResponse>(`/api/jobs?skip=${skip}&limit=${limit}`),
@@ -83,9 +149,8 @@ export const jobsApi = {
 
   markApplied: (id: string) =>
     fetchApi(`/api/jobs/${id}/apply`, { method: 'PUT' }),
-};
+}
 
-// Daily Tasks API
 export const tasksApi = {
   list: () => fetchApi<DailyTasksResponse>('/api/daily-tasks'),
 
@@ -96,39 +161,96 @@ export const tasksApi = {
     fetchApi(`/api/daily-tasks/${id}/uncomplete`, { method: 'PUT' }),
 
   stats: () => fetchApi<TaskStatsResponse>('/api/daily-tasks/stats'),
-};
+}
 
-// Types
+export interface AuthMessage {
+  message: string;
+}
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  name?: string;
+  avatar_url?: string;
+  role: 'admin' | 'user';
+  is_disabled: boolean;
+}
+
+export interface AdminUser extends CurrentUser {
+  created_at?: string;
+  last_login_at?: string;
+}
+
 export interface ResumeResponse {
   id: string;
   file_name: string;
   uploaded_at: string;
   content_preview?: string;
+  storage_provider?: string;
+  download_url?: string;
 }
 
 export interface PreferenceResponse {
   id: string;
-  keywords: string;
-  location?: string;
-  is_intern: boolean;
-  need_sponsor: boolean;
-  experience_level?: string;
-  job_description?: string;
-  remote_preference?: string;
+  raw_text?: string;
+  extracted_fields: PreferenceFields;
+  override_fields: PreferenceOverrideFields;
+  effective_fields: PreferenceFields;
+  extracted_at?: string;
+  extraction_version?: string;
   reminder_enabled: boolean;
   reminder_email?: string;
 }
 
-export interface PreferenceData {
-  keywords: string;
-  location?: string;
+export interface PreferenceAnalyzeResponse {
+  raw_text: string;
+  extracted_fields: PreferenceFields;
+  effective_fields: PreferenceFields;
+  extracted_at: string;
+  extraction_version: string;
+  used_fallback: boolean;
+}
+
+export interface PreferenceFields {
+  keywords: string[];
+  locations: string[];
   is_intern: boolean;
   need_sponsor: boolean;
-  experience_level?: string;
-  job_description?: string;
-  remote_preference?: string;
+  experience_level?: 'entry' | 'mid' | 'senior';
+  remote_preference?: 'remote' | 'hybrid' | 'onsite';
+  excluded_companies: string[];
+  industries: string[];
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency?: string;
+}
+
+export interface PreferenceData {
+  raw_text: string;
+  extracted_fields?: PreferenceFields;
+  override_fields?: PreferenceOverrideFields;
   reminder_enabled: boolean;
   reminder_email?: string;
+}
+
+export interface PreferencePatchData {
+  override_fields?: PreferenceOverrideFields;
+  reminder_enabled?: boolean;
+  reminder_email?: string;
+}
+
+export interface PreferenceOverrideFields {
+  keywords?: string[];
+  locations?: string[];
+  is_intern?: boolean;
+  need_sponsor?: boolean;
+  experience_level?: 'entry' | 'mid' | 'senior' | null;
+  remote_preference?: 'remote' | 'hybrid' | 'onsite' | null;
+  excluded_companies?: string[];
+  industries?: string[];
+  salary_min?: number | null;
+  salary_max?: number | null;
+  salary_currency?: string | null;
 }
 
 export interface JobResponse {

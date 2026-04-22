@@ -2,9 +2,9 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
-from typing import List, Optional
-import os
+from sqlalchemy import select, delete
+from typing import Optional
+from tempfile import NamedTemporaryFile
 
 from app.core.config import settings
 from app.models.models import Resume, ResumeChunk
@@ -26,15 +26,23 @@ class RAGService:
 
     async def process_resume(
         self,
-        file_path: str,
+        file_bytes: bytes,
         resume_id: str,
         db: AsyncSession
     ) -> dict:
         """Process a PDF resume: extract text, chunk, and embed."""
 
-        # 1. Load PDF
-        loader = PyPDFLoader(file_path)
-        documents = loader.load()
+        with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(file_bytes)
+            temp_path = temp_file.name
+
+        try:
+            # 1. Load PDF
+            loader = PyPDFLoader(temp_path)
+            documents = loader.load()
+        finally:
+            from pathlib import Path
+            Path(temp_path).unlink(missing_ok=True)
 
         # 2. Extract full text
         full_text = "\n".join([doc.page_content for doc in documents])
@@ -43,7 +51,9 @@ class RAGService:
         chunks = self.text_splitter.split_text(full_text)
 
         # 4. Generate embeddings
-        embeddings = await self.embeddings.aembed_documents(chunks)
+        embeddings = await self.embeddings.aembed_documents(chunks) if chunks else []
+
+        await db.execute(delete(ResumeChunk).where(ResumeChunk.resume_id == resume_id))
 
         # 5. Store chunks with embeddings
         for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
@@ -83,19 +93,11 @@ class RAGService:
 
         # Generate query embedding
         query_embedding = await self.embeddings.aembed_query(query)
-
-        # Use pgvector similarity search
-        # Note: This requires the vector extension and proper indexing
-        sql = text("""
-            SELECT content, 1 - (embedding <=> :query_embedding::vector) as similarity
-            FROM resume_chunks
-            ORDER BY embedding <=> :query_embedding::vector
-            LIMIT :top_k
-        """)
-
         result = await db.execute(
-            sql,
-            {"query_embedding": str(query_embedding), "top_k": top_k}
+            select(ResumeChunk.content)
+            .where(ResumeChunk.embedding.is_not(None))
+            .order_by(ResumeChunk.embedding.cosine_distance(query_embedding))
+            .limit(top_k)
         )
         rows = result.fetchall()
 

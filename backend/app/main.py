@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import resume, preferences, jobs, tasks
+from app.api import admin, auth, jobs, preferences, resume, tasks
 from app.services.scheduler_service import scheduler_service
 
 
@@ -32,19 +32,15 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:3000",
-        # Allow Railway frontend domains (will be added in production)
-        "*"  # For Railway deployment - consider restricting in production
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Include routers
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(resume.router, prefix="/api/resume", tags=["Resume"])
 app.include_router(preferences.router, prefix="/api/preferences", tags=["Preferences"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])

@@ -1,18 +1,23 @@
 import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileText, Settings, Briefcase, User, Sparkles, Menu, X } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, Briefcase, User, Sparkles, Menu, X, Shield, LogOut } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { useAuth } from './auth/AuthProvider'
 
 const navItems = [
   { path: '/', label: 'Overview', icon: LayoutDashboard },
   { path: '/resume', label: 'Resume Profile', icon: FileText },
   { path: '/jobs', label: 'Matched Jobs', icon: Briefcase },
-  { path: '/preferences', label: 'Preferences', icon: Settings },
+  { path: '/preferences', label: 'Career Profile', icon: Settings },
 ]
 
 export default function Layout() {
   const location = useLocation()
-  const currentPage = navItems.find(item => item.path === location.pathname)?.label || 'Dashboard'
+  const { user, logout } = useAuth()
+  const fullNavItems = user?.role === 'admin'
+    ? [...navItems, { path: '/admin', label: 'Admin Console', icon: Shield }]
+    : navItems
+  const currentPage = fullNavItems.find(item => item.path === location.pathname)?.label || 'Dashboard'
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Close sidebar when route changes (mobile)
@@ -69,7 +74,7 @@ export default function Layout() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 lg:px-4 py-6 lg:py-8 space-y-1 lg:space-y-2 overflow-y-auto">
-          {navItems.map((item) => (
+          {fullNavItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -90,17 +95,35 @@ export default function Layout() {
 
         {/* User Profile */}
         <div className="p-3 lg:p-4 border-t border-white/10 bg-black/20">
-          <button className="flex items-center gap-3 w-full p-2 rounded-xl hover:bg-white/5 transition-colors">
-            <div className="h-9 w-9 lg:h-10 lg:w-10 rounded-full bg-gradient-to-tr from-indigo-400 to-rose-400 p-[2px] flex-shrink-0">
-              <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center">
-                 <User size={16} className="text-indigo-200 lg:w-[18px] lg:h-[18px]" />
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 w-full p-2 rounded-xl">
+              <div className="h-9 w-9 lg:h-10 lg:w-10 rounded-full bg-gradient-to-tr from-indigo-400 to-rose-400 p-[2px] flex-shrink-0">
+                <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center overflow-hidden">
+                  {user?.avatar_url ? (
+                    <img src={user.avatar_url} alt={user.name || user.email} className="h-full w-full object-cover" />
+                  ) : (
+                    <User size={16} className="text-indigo-200 lg:w-[18px] lg:h-[18px]" />
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-col items-start overflow-hidden">
+                <span className="text-sm font-medium text-white truncate w-full">
+                  {user?.name || 'User Profile'}
+                </span>
+                <span className="text-xs text-slate-400 truncate w-full">{user?.email}</span>
               </div>
             </div>
-            <div className="flex flex-col items-start overflow-hidden">
-              <span className="text-sm font-medium text-white truncate w-full">User Profile</span>
-              <span className="text-xs text-slate-400 truncate w-full">user@example.com</span>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">{user?.role}</span>
+              <button
+                className="inline-flex items-center gap-2 text-xs font-medium text-slate-200 hover:text-white"
+                onClick={logout}
+              >
+                <LogOut size={14} />
+                Sign Out
+              </button>
             </div>
-          </button>
+          </div>
         </div>
       </aside>
 

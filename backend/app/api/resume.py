@@ -1,114 +1,141 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
 from typing import Optional
-import os
 import uuid
 
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.models.models import Resume
+from app.models.models import Resume, User
 from app.services.rag_service import RAGService
+from app.services.storage_service import StoredFile, get_storage_service
 
 router = APIRouter()
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+storage_service = get_storage_service()
 
 
 class ResumeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     file_name: str
     uploaded_at: str
     content_preview: Optional[str] = None
+    storage_provider: Optional[str] = None
+    download_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+
+def _stored_file_from_resume(resume: Resume) -> Optional[StoredFile]:
+    path = resume.storage_path or resume.file_path
+    if not path:
+        return None
+
+    return StoredFile(
+        provider=resume.storage_provider or "local",
+        bucket=resume.storage_bucket,
+        path=path,
+    )
+
+
+async def serialize_resume(resume: Resume) -> ResumeResponse:
+    stored_file = _stored_file_from_resume(resume)
+    download_url = None
+    if stored_file:
+        download_url = await storage_service.create_download_url(stored_file)
+
+    return ResumeResponse(
+        id=resume.id,
+        file_name=resume.file_name,
+        uploaded_at=resume.uploaded_at.isoformat(),
+        content_preview=resume.content[:500] if resume.content else None,
+        storage_provider=resume.storage_provider,
+        download_url=download_url,
+    )
 
 
 @router.post("", response_model=ResumeResponse)
 async def upload_resume(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Upload a PDF resume."""
-    # Validate file type
-    if not file.filename.endswith(".pdf"):
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    # Save file
     file_id = str(uuid.uuid4())
-    file_path = os.path.join(UPLOAD_DIR, f"{file_id}.pdf")
-
     content = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(content)
+    stored_file = await storage_service.upload_resume(file_id, file.filename, content)
 
-    # Delete existing resume (single user mode)
-    existing = await db.execute(select(Resume))
+    existing = await db.execute(select(Resume).where(Resume.user_id == current_user.id))
     for resume in existing.scalars().all():
-        if os.path.exists(resume.file_path):
-            os.remove(resume.file_path)
+        existing_file = _stored_file_from_resume(resume)
+        if existing_file:
+            await storage_service.delete_file(existing_file)
         await db.delete(resume)
 
-    # Create resume record
     resume = Resume(
         id=file_id,
-        file_path=file_path,
-        file_name=file.filename
+        user_id=current_user.id,
+        file_path=stored_file.path if stored_file.provider == "local" else None,
+        storage_provider=stored_file.provider,
+        storage_bucket=stored_file.bucket,
+        storage_path=stored_file.path,
+        file_name=file.filename,
     )
     db.add(resume)
     await db.flush()
 
-    # Process with RAG service
     rag_service = RAGService()
     try:
-        result = await rag_service.process_resume(file_path, file_id, db)
-        resume.content = result.get("content_preview", "")
-    except Exception as e:
-        # Log error but don't fail the upload
-        print(f"RAG processing error: {e}")
+        await rag_service.process_resume(content, file_id, db)
+    except Exception as exc:
+        print(f"RAG processing error: {exc}")
 
     await db.commit()
     await db.refresh(resume)
 
-    return ResumeResponse(
-        id=resume.id,
-        file_name=resume.file_name,
-        uploaded_at=resume.uploaded_at.isoformat(),
-        content_preview=resume.content[:500] if resume.content else None
-    )
+    return await serialize_resume(resume)
 
 
 @router.get("", response_model=Optional[ResumeResponse])
-async def get_resume(db: AsyncSession = Depends(get_db)):
+async def get_resume(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Get the current resume."""
-    result = await db.execute(select(Resume).order_by(Resume.uploaded_at.desc()))
+    result = await db.execute(
+        select(Resume)
+        .where(Resume.user_id == current_user.id)
+        .order_by(Resume.uploaded_at.desc())
+    )
     resume = result.scalar_one_or_none()
 
     if not resume:
         return None
 
-    return ResumeResponse(
-        id=resume.id,
-        file_name=resume.file_name,
-        uploaded_at=resume.uploaded_at.isoformat(),
-        content_preview=resume.content[:500] if resume.content else None
-    )
+    return await serialize_resume(resume)
 
 
 @router.delete("")
-async def delete_resume(db: AsyncSession = Depends(get_db)):
+async def delete_resume(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Delete the current resume."""
-    result = await db.execute(select(Resume))
+    result = await db.execute(select(Resume).where(Resume.user_id == current_user.id))
     resumes = result.scalars().all()
 
     if not resumes:
         raise HTTPException(status_code=404, detail="No resume found")
 
     for resume in resumes:
-        if os.path.exists(resume.file_path):
-            os.remove(resume.file_path)
+        existing_file = _stored_file_from_resume(resume)
+        if existing_file:
+            await storage_service.delete_file(existing_file)
         await db.delete(resume)
 
     await db.commit()
