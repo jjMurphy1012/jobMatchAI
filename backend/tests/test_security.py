@@ -7,6 +7,8 @@ from app.core.security import (
     create_access_token,
     decode_access_token,
     hash_token,
+    hash_password,
+    verify_password,
 )
 
 
@@ -42,3 +44,11 @@ def test_decode_access_token_rejects_tampering():
 def test_hash_token_is_stable():
     assert hash_token("refresh-token") == hash_token("refresh-token")
     assert hash_token("refresh-token") != hash_token("refresh-token-2")
+
+
+def test_password_hash_round_trip():
+    password_hash = hash_password("super-secret-password")
+
+    assert password_hash != "super-secret-password"
+    assert verify_password("super-secret-password", password_hash) is True
+    assert verify_password("wrong-password", password_hash) is False

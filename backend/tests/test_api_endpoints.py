@@ -1,4 +1,5 @@
 from collections import deque
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -113,6 +114,103 @@ def test_google_callback_is_rate_limited(monkeypatch):
 
     assert limited.status_code == 429
     assert limited.json()["detail"] == "Too many authentication attempts. Please try again later."
+
+
+def test_email_register_returns_user_and_sets_cookie(monkeypatch):
+    app = build_app(("/api/auth", auth_api.router))
+
+    async def override_db():
+        yield None
+
+    async def fake_register_user_with_password(db, email, name, password):
+        assert email == "new-user@example.com"
+        assert name == "Jane Doe"
+        assert password == "supersecret"
+        return User(
+            id="user-1",
+            email=email,
+            name=name,
+            role="user",
+            is_disabled=False,
+        )
+
+    async def fake_create_session(db, user, request):
+        return SimpleNamespace(
+            access_token="access-token",
+            refresh_token="refresh-token",
+            session=None,
+            user=user,
+        )
+
+    def fake_set_auth_cookies(response, bundle):
+        response.set_cookie(settings.ACCESS_COOKIE_NAME, bundle.access_token)
+        response.set_cookie(settings.REFRESH_COOKIE_NAME, bundle.refresh_token)
+
+    app.dependency_overrides[get_db] = override_db
+    monkeypatch.setattr(auth_api.auth_service, "register_user_with_password", fake_register_user_with_password)
+    monkeypatch.setattr(auth_api.auth_service, "create_session", fake_create_session)
+    monkeypatch.setattr(auth_api.auth_service, "set_auth_cookies", fake_set_auth_cookies)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Jane Doe",
+            "email": "new-user@example.com",
+            "password": "supersecret",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["email"] == "new-user@example.com"
+    assert response.cookies.get(settings.ACCESS_COOKIE_NAME) == "access-token"
+    assert response.cookies.get(settings.REFRESH_COOKIE_NAME) == "refresh-token"
+
+
+def test_email_login_returns_user_and_sets_cookie(monkeypatch):
+    app = build_app(("/api/auth", auth_api.router))
+
+    async def override_db():
+        yield None
+
+    async def fake_create_password_login_session(db, email, password, request):
+        assert email == "existing@example.com"
+        assert password == "supersecret"
+        user = User(
+            id="user-2",
+            email=email,
+            name="Existing User",
+            role="user",
+            is_disabled=False,
+        )
+        return SimpleNamespace(
+            access_token="access-token",
+            refresh_token="refresh-token",
+            session=None,
+            user=user,
+        )
+
+    def fake_set_auth_cookies(response, bundle):
+        response.set_cookie(settings.ACCESS_COOKIE_NAME, bundle.access_token)
+        response.set_cookie(settings.REFRESH_COOKIE_NAME, bundle.refresh_token)
+
+    app.dependency_overrides[get_db] = override_db
+    monkeypatch.setattr(auth_api.auth_service, "create_password_login_session", fake_create_password_login_session)
+    monkeypatch.setattr(auth_api.auth_service, "set_auth_cookies", fake_set_auth_cookies)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/auth/login",
+        json={
+            "email": "existing@example.com",
+            "password": "supersecret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Existing User"
+    assert response.cookies.get(settings.ACCESS_COOKIE_NAME) == "access-token"
+    assert response.cookies.get(settings.REFRESH_COOKIE_NAME) == "refresh-token"
 
 
 def test_preferences_round_trip_with_overrides(monkeypatch):

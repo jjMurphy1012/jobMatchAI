@@ -155,6 +155,7 @@ class User(Base):
     email = Column(String, nullable=False, unique=True, index=True)
     name = Column(String, nullable=True)
     avatar_url = Column(String, nullable=True)
+    password_hash = Column(String, nullable=True)
     role = Column(String, nullable=False, default="user")
     is_disabled = Column(Boolean, nullable=False, default=False)
     last_login_at = Column(DateTime(timezone=True), nullable=True)

@@ -75,6 +75,16 @@ async function fetchApi<T>(
 
 export const authApi = {
   googleLoginUrl: () => `${API_BASE}/api/auth/google/login`,
+  register: (payload: EmailRegisterPayload) =>
+    fetchApi<CurrentUser>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  login: (payload: EmailLoginPayload) =>
+    fetchApi<CurrentUser>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   me: () => fetchApi<CurrentUser>('/api/auth/me'),
   logout: () => fetchApi<AuthMessage>('/api/auth/logout', { method: 'POST' }, false),
 }
@@ -160,6 +170,17 @@ export interface CurrentUser {
   avatar_url?: string;
   role: 'admin' | 'user';
   is_disabled: boolean;
+}
+
+export interface EmailRegisterPayload {
+  name?: string;
+  email: string;
+  password: string;
+}
+
+export interface EmailLoginPayload {
+  email: string;
+  password: string;
 }
 
 export interface AdminUser extends CurrentUser {

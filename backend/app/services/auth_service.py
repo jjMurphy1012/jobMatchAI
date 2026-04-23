@@ -16,6 +16,8 @@ from app.core.security import (
     decode_access_token,
     generate_refresh_token,
     hash_token,
+    hash_password,
+    verify_password,
 )
 from app.models.models import AuthAccount, User, UserSession
 
@@ -140,6 +142,55 @@ class AuthService:
         auth_account.last_login_at = now
         await db.flush()
         return user
+
+    async def register_user_with_password(
+        self,
+        db: AsyncSession,
+        email: str,
+        name: str | None,
+        password: str,
+    ) -> User:
+        normalized_email = email.strip().lower()
+        result = await db.execute(select(User).where(User.email == normalized_email))
+        existing_user = result.scalar_one_or_none()
+
+        if existing_user:
+            if existing_user.is_disabled:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is disabled.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account with this email already exists. Log in instead.",
+            )
+
+        user = User(
+            email=normalized_email,
+            name=name.strip() if name and name.strip() else None,
+            password_hash=hash_password(password),
+            role="admin" if normalized_email in settings.admin_emails else "user",
+        )
+        db.add(user)
+        await db.flush()
+        return user
+
+    async def create_password_login_session(
+        self,
+        db: AsyncSession,
+        email: str,
+        password: str,
+        request: Request,
+    ) -> AuthSessionBundle:
+        normalized_email = email.strip().lower()
+        result = await db.execute(select(User).where(User.email == normalized_email))
+        user = result.scalar_one_or_none()
+
+        if not user or not user.password_hash or not verify_password(password, user.password_hash):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
+        if user.is_disabled:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is disabled.")
+
+        user.last_login_at = datetime.now(timezone.utc)
+        await db.flush()
+        return await self.create_session(db, user, request)
 
     async def create_session(self, db: AsyncSession, user: User, request: Request) -> AuthSessionBundle:
         now = datetime.now(timezone.utc)

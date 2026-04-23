@@ -3,7 +3,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -31,6 +31,17 @@ class CurrentUserResponse(BaseModel):
 
 class LogoutResponse(BaseModel):
     message: str
+
+
+class EmailRegisterRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=320)
+    password: str = Field(min_length=8, max_length=256)
+
+
+class EmailLoginRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+    password: str = Field(min_length=8, max_length=256)
 
 
 def _frontend_error_redirect(error_code: str) -> str:
@@ -98,6 +109,53 @@ async def complete_google_login(
         response = RedirectResponse(_frontend_error_redirect("google_exchange_failed"), status_code=status.HTTP_302_FOUND)
         auth_service.clear_auth_cookies(response)
         return response
+
+
+@router.post("/register", response_model=CurrentUserResponse, status_code=status.HTTP_201_CREATED)
+async def register_with_email(
+    payload: EmailRegisterRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    auth_rate_limiter.enforce(
+        request=request,
+        bucket="email_register",
+        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    user = await auth_service.register_user_with_password(
+        db=db,
+        email=str(payload.email),
+        name=payload.name,
+        password=payload.password,
+    )
+    bundle = await auth_service.create_session(db, user, request)
+    auth_service.set_auth_cookies(response, bundle)
+    return CurrentUserResponse.model_validate(bundle.user)
+
+
+@router.post("/login", response_model=CurrentUserResponse)
+async def login_with_email(
+    payload: EmailLoginRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    auth_rate_limiter.enforce(
+        request=request,
+        bucket="email_login",
+        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    bundle = await auth_service.create_password_login_session(
+        db=db,
+        email=str(payload.email),
+        password=payload.password,
+        request=request,
+    )
+    auth_service.set_auth_cookies(response, bundle)
+    return CurrentUserResponse.model_validate(bundle.user)
 
 
 @router.get("/me", response_model=CurrentUserResponse)

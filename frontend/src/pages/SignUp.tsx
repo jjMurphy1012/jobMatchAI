@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, LockKeyhole, Mail, User2 } from 'lucide-react'
 import { useAuth } from '../components/auth/AuthProvider'
+import { authApi } from '../api/client'
 import { AuthBrand, AuthDivider, AuthField, DesktopAuthPanel, GoogleMark } from '../components/auth/AuthPrimitives'
 import { Button } from '../components/ui/button'
 
@@ -15,26 +16,35 @@ function InlineAlert({ message }: { message: string }) {
 
 function SignUpForm({
   onGoogleLogin,
+  onEmailRegister,
 }: {
   onGoogleLogin: () => void
+  onEmailRegister: (payload: { name: string; email: string; password: string }) => Promise<string | null>
 }) {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [notice, setNotice] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setNotice('')
     if (!fullName || !email || !password) {
-      setNotice('Fill out the staged registration fields or use Google to continue right now.')
+      setNotice('Enter your name, email, and password to create an account.')
       return
     }
     if (!agreed) {
       setNotice('Please agree to the terms before creating an account.')
       return
     }
-    setNotice('Email sign-up UI is ready, but account creation is still Google-only on the backend. Use Google to continue.')
+    setIsSubmitting(true)
+    const error = await onEmailRegister({ name: fullName, email, password })
+    setIsSubmitting(false)
+    if (error) {
+      setNotice(error)
+    }
   }
 
   return (
@@ -46,6 +56,7 @@ function SignUpForm({
         variant="outline"
         className="h-[70px] w-full rounded-[18px] border-[#cfd6e7] text-[1rem] font-semibold text-[#0a1630] shadow-none hover:bg-[#f7f9ff]"
         onClick={onGoogleLogin}
+        disabled={isSubmitting}
       >
         <GoogleMark />
         <span className="ml-3">Sign up with Google</span>
@@ -101,8 +112,11 @@ function SignUpForm({
           </span>
         </label>
 
-        <Button className="h-[68px] w-full rounded-[18px] bg-[#1149d8] text-[1rem] font-semibold text-white shadow-[0_12px_30px_rgba(17,73,216,0.28)] hover:bg-[#0b3fc0]">
-          Create Account
+        <Button
+          className="h-[68px] w-full rounded-[18px] bg-[#1149d8] text-[1rem] font-semibold text-white shadow-[0_12px_30px_rgba(17,73,216,0.28)] hover:bg-[#0b3fc0]"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? 'Creating Account...' : 'Create Account'}
           <ArrowRight className="ml-3 h-5 w-5" />
         </Button>
       </form>
@@ -118,7 +132,7 @@ function SignUpForm({
 }
 
 export default function SignUp() {
-  const { user, isLoading, loginWithGoogle } = useAuth()
+  const { user, isLoading, loginWithGoogle, refreshUser } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -126,6 +140,16 @@ export default function SignUp() {
       navigate('/', { replace: true })
     }
   }, [isLoading, navigate, user])
+
+  async function handleEmailRegister(payload: { name: string; email: string; password: string }) {
+    const response = await authApi.register(payload)
+    if (response.error) {
+      return response.error
+    }
+    await refreshUser()
+    navigate('/', { replace: true })
+    return null
+  }
 
   return (
     <div className="min-h-screen bg-[#f6f7fc] px-4 py-6 text-[#0f172a] sm:px-6 lg:px-8 lg:py-8">
@@ -148,7 +172,7 @@ export default function SignUp() {
             </div>
 
             <div className="mt-10 lg:hidden">
-              <SignUpForm onGoogleLogin={loginWithGoogle} />
+              <SignUpForm onGoogleLogin={loginWithGoogle} onEmailRegister={handleEmailRegister} />
             </div>
 
             <div className="hidden rounded-[30px] border border-[#d7dced] bg-white px-8 py-9 shadow-[0_16px_48px_rgba(15,23,42,0.08)] lg:block">
@@ -161,7 +185,7 @@ export default function SignUp() {
                   </p>
                 </div>
               </div>
-              <SignUpForm onGoogleLogin={loginWithGoogle} />
+              <SignUpForm onGoogleLogin={loginWithGoogle} onEmailRegister={handleEmailRegister} />
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { LockKeyhole, Mail } from 'lucide-react'
 import { useAuth } from '../components/auth/AuthProvider'
+import { authApi } from '../api/client'
 import { AuthBrand, AuthDivider, AuthField, DesktopAuthPanel, GoogleMark } from '../components/auth/AuthPrimitives'
 import { Button } from '../components/ui/button'
 
@@ -25,7 +26,7 @@ function InlineAlert({ tone = 'neutral', message }: { tone?: 'neutral' | 'error'
 }
 
 export default function Login() {
-  const { user, isLoading, loginWithGoogle } = useAuth()
+  const { user, isLoading, loginWithGoogle, refreshUser } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -33,6 +34,7 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [notice, setNotice] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (!isLoading && user) {
@@ -41,13 +43,24 @@ export default function Login() {
     }
   }, [isLoading, location.state, navigate, user])
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setNotice('')
     if (!email || !password) {
-      setNotice('Enter both email and password if you want to stage the email login flow.')
+      setNotice('Enter both email and password to continue.')
       return
     }
-    setNotice('Email/password sign-in UI is ready, but the backend auth flow is still Google-only. Use Google to continue.')
+    setIsSubmitting(true)
+    const response = await authApi.login({ email, password })
+    setIsSubmitting(false)
+
+    if (response.error) {
+      setNotice(response.error)
+      return
+    }
+
+    await refreshUser()
+    navigate((location.state as { from?: string } | null)?.from || '/', { replace: true })
   }
 
   return (
@@ -76,6 +89,7 @@ export default function Login() {
                   variant="outline"
                   className="h-[70px] w-full rounded-[18px] border-[#cfd6e7] text-[1rem] font-semibold text-[#0a1630] shadow-none hover:bg-[#f7f9ff]"
                   onClick={loginWithGoogle}
+                  disabled={isSubmitting}
                 >
                   <GoogleMark />
                   <span className="ml-3">Sign in with Google</span>
@@ -107,7 +121,7 @@ export default function Login() {
                         type="button"
                         className="text-[0.95rem] font-medium text-[#1149d8] transition hover:text-[#0b3da9]"
                         onClick={() =>
-                          setNotice('Password reset is not enabled yet. Google sign-in is the active auth path.')
+                          setNotice('Password reset is not enabled yet. Use your existing password or Google sign-in.')
                         }
                       >
                         Forgot Password?
@@ -115,8 +129,11 @@ export default function Login() {
                     }
                   />
 
-                  <Button className="mt-2 h-[68px] w-full rounded-[18px] bg-[#1149d8] text-[1rem] font-semibold text-white shadow-[0_12px_30px_rgba(17,73,216,0.28)] hover:bg-[#0b3fc0]">
-                    Log In
+                  <Button
+                    className="mt-2 h-[68px] w-full rounded-[18px] bg-[#1149d8] text-[1rem] font-semibold text-white shadow-[0_12px_30px_rgba(17,73,216,0.28)] hover:bg-[#0b3fc0]"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? 'Logging In...' : 'Log In'}
                   </Button>
                 </form>
 

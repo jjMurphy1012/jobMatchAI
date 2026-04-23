@@ -75,3 +75,47 @@ def generate_refresh_token() -> str:
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    derived_key = hashlib.scrypt(
+        password.encode("utf-8"),
+        salt=salt,
+        n=2**14,
+        r=8,
+        p=1,
+    )
+    return "$".join(
+        [
+            "scrypt",
+            str(2**14),
+            "8",
+            "1",
+            _b64url_encode(salt),
+            _b64url_encode(derived_key),
+        ]
+    )
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        algorithm, n_value, r_value, p_value, salt_value, key_value = password_hash.split("$", 5)
+    except ValueError:
+        return False
+
+    if algorithm != "scrypt":
+        return False
+
+    try:
+        derived_key = hashlib.scrypt(
+            password.encode("utf-8"),
+            salt=_b64url_decode(salt_value),
+            n=int(n_value),
+            r=int(r_value),
+            p=int(p_value),
+        )
+    except (ValueError, TypeError):
+        return False
+
+    return hmac.compare_digest(_b64url_encode(derived_key), key_value)
