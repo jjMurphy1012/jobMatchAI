@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Admin from './pages/Admin'
 import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
+import InterviewPrep from './pages/InterviewPrep'
 import Login from './pages/Login'
 import SignUp from './pages/SignUp'
 import Resume from './pages/Resume'
@@ -23,7 +24,9 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="resume" element={<Resume />} />
           <Route path="preferences" element={<Preferences />} />
+          <Route path="matches" element={<Jobs />} />
           <Route path="jobs" element={<Jobs />} />
+          <Route path="interviews" element={<InterviewPrep />} />
         </Route>
       </Route>
 

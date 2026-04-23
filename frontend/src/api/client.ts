@@ -96,6 +96,22 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     }),
+  listInterviewExperiences: () =>
+    fetchApi<AdminInterviewExperience[]>('/api/admin/interview-experiences'),
+  createInterviewExperience: (payload: AdminInterviewExperiencePayload) =>
+    fetchApi<AdminInterviewExperience>('/api/admin/interview-experiences', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateInterviewExperience: (id: string, payload: AdminInterviewExperiencePayload) =>
+    fetchApi<AdminInterviewExperience>(`/api/admin/interview-experiences/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteInterviewExperience: (id: string) =>
+    fetchApi<AuthMessage>(`/api/admin/interview-experiences/${id}`, {
+      method: 'DELETE',
+    }),
 }
 
 export const resumeApi = {
@@ -159,6 +175,11 @@ export const tasksApi = {
   stats: () => fetchApi<TaskStatsResponse>('/api/daily-tasks/stats'),
 }
 
+export const interviewExperiencesApi = {
+  list: (limit = 12) =>
+    fetchApi<InterviewExperience[]>(`/api/interview-experiences?limit=${limit}`),
+}
+
 export interface AuthMessage {
   message: string;
 }
@@ -186,6 +207,41 @@ export interface EmailLoginPayload {
 export interface AdminUser extends CurrentUser {
   created_at?: string;
   last_login_at?: string;
+}
+
+export interface AdminInterviewExperience {
+  id: string;
+  company_name: string;
+  company_name_normalized: string;
+  role: string;
+  level?: string;
+  year?: number;
+  rounds?: string;
+  topics: string[];
+  summary: string;
+  source_url?: string;
+  source_site?: string;
+  review_status: 'draft' | 'published';
+  relevance_keywords: string[];
+  created_by_user_id?: string;
+  reviewed_by_user_id?: string;
+  reviewed_at?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AdminInterviewExperiencePayload {
+  company_name: string;
+  role: string;
+  level?: string | null;
+  year?: number | null;
+  rounds?: string | null;
+  topics: string[];
+  summary: string;
+  source_url?: string | null;
+  source_site?: string | null;
+  review_status: 'draft' | 'published';
+  relevance_keywords: string[];
 }
 
 export interface ResumeResponse {
@@ -327,4 +383,19 @@ export interface TaskStatsResponse {
   completion_rate: number;
   all_completed: boolean;
   streak_days: number;
+}
+
+export interface InterviewExperience {
+  id: string;
+  company_name: string;
+  role: string;
+  level?: string;
+  year?: number;
+  rounds?: string;
+  topics: string[];
+  summary: string;
+  source_url?: string;
+  source_site?: string;
+  relevance_score: number;
+  matched_company: boolean;
 }

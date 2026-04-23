@@ -49,10 +49,10 @@ export default function Jobs() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 pb-1">
-            Matched Opportunities
+            Matches
           </h1>
           <p className="text-slate-500 mt-2 text-lg">
-            AI-curated positions based on your profile
+            Run Match when you want a fresh set of roles based on your resume and career profile
           </p>
           {lastSearch && (
             <p className="text-sm text-slate-400 mt-1 font-medium">
@@ -69,7 +69,7 @@ export default function Jobs() {
           <RefreshCw 
             className={`w-5 h-5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} 
           />
-          {refreshMutation.isPending ? 'Running Search...' : 'Run New Search'}
+          {refreshMutation.isPending ? 'Running Match...' : 'Run Match'}
         </button>
       </div>
 
@@ -92,16 +92,16 @@ export default function Jobs() {
             <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
               <Search className="w-10 h-10 text-slate-400" />
             </div>
-            <h3 className="text-xl font-semibold text-slate-900 mb-2">No jobs found yet</h3>
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">No matches yet</h3>
             <p className="text-slate-500 max-w-sm text-center mb-8">
-              Click "Run New Search" to let our AI scan the market for positions matching your resume.
+              Upload your resume, complete your Career Profile, then click "Run Match" to generate your first set of recommended roles.
             </p>
             <button
               onClick={() => refreshMutation.mutate()}
               disabled={refreshMutation.isPending}
               className="px-6 py-3 bg-white text-primary-600 border border-primary-200 rounded-xl font-medium hover:bg-primary-50 transition-colors"
             >
-              Start Search
+              Run Match
             </button>
           </motion.div>
         ) : (

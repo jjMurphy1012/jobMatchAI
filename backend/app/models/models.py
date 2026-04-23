@@ -214,6 +214,33 @@ class Application(Base):
     user_job_match = relationship("UserJobMatch", back_populates="application")
 
 
+class InterviewExperience(Base):
+    """Curated interview experience content related to jobs and companies."""
+    __tablename__ = "interview_experiences"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    company_name = Column(String, nullable=False)
+    company_name_normalized = Column(String, nullable=False, index=True)
+    role = Column(String, nullable=False)
+    level = Column(String, nullable=True)
+    year = Column(Integer, nullable=True)
+    rounds = Column(Text, nullable=True)
+    topics = Column(JSON, nullable=True)
+    summary = Column(Text, nullable=False)
+    source_url = Column(String, nullable=True)
+    source_site = Column(String, nullable=True)
+    review_status = Column(String, nullable=False, default="draft")
+    relevance_keywords = Column(JSON, nullable=True)
+    created_by_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    created_by_user = relationship("User", foreign_keys=[created_by_user_id], back_populates="created_interview_experiences")
+    reviewed_by_user = relationship("User", foreign_keys=[reviewed_by_user_id], back_populates="reviewed_interview_experiences")
+
+
 class DailyTask(Base):
     """Daily application tasks."""
     __tablename__ = "daily_tasks"
@@ -253,6 +280,16 @@ class User(Base):
     jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
     user_job_matches = relationship("UserJobMatch", back_populates="user", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")
+    created_interview_experiences = relationship(
+        "InterviewExperience",
+        foreign_keys="InterviewExperience.created_by_user_id",
+        back_populates="created_by_user",
+    )
+    reviewed_interview_experiences = relationship(
+        "InterviewExperience",
+        foreign_keys="InterviewExperience.reviewed_by_user_id",
+        back_populates="reviewed_by_user",
+    )
 
 
 class AuthAccount(Base):

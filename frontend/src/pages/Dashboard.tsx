@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { CheckCircle, Circle, ExternalLink, PartyPopper, Briefcase, TrendingUp } from 'lucide-react'
-import { tasksApi, DailyTask, TaskStatsResponse } from '../api/client'
+import { CheckCircle, Circle, ExternalLink, PartyPopper, Briefcase, TrendingUp, FileText, Settings, Search } from 'lucide-react'
+import { tasksApi, DailyTask, TaskStatsResponse, resumeApi, preferencesApi } from '../api/client'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Progress } from '../components/ui/progress'
 import { Badge } from '../components/ui/badge'
@@ -9,10 +10,13 @@ import { Button } from '../components/ui/button'
 import { cn } from '../lib/utils'
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [tasks, setTasks] = useState<DailyTask[]>([])
   const [stats, setStats] = useState<TaskStatsResponse | null>(null)
   const [allCompleted, setAllCompleted] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [hasResume, setHasResume] = useState(false)
+  const [hasProfile, setHasProfile] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -20,9 +24,11 @@ export default function Dashboard() {
 
   async function loadData() {
     setLoading(true)
-    const [tasksRes, statsRes] = await Promise.all([
+    const [tasksRes, statsRes, resumeRes, profileRes] = await Promise.all([
       tasksApi.list(),
       tasksApi.stats(),
+      resumeApi.get(),
+      preferencesApi.get(),
     ])
 
     if (tasksRes.data) {
@@ -32,6 +38,8 @@ export default function Dashboard() {
     if (statsRes.data) {
       setStats(statsRes.data)
     }
+    setHasResume(Boolean(resumeRes.data))
+    setHasProfile(Boolean(profileRes.data?.raw_text || profileRes.data?.effective_fields?.keywords?.length))
     setLoading(false)
   }
 
@@ -73,12 +81,76 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-600">Today</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Keep your search loop moving</h1>
+          <p className="mt-2 max-w-2xl text-slate-600">
+            Resume and Career Profile are your setup steps. Matches only appear after you manually run a new search from the Matches page.
+          </p>
+        </div>
+        <Button className="gap-2" onClick={() => navigate('/matches')}>
+          <Search className="h-4 w-4" />
+          Go to Matches
+        </Button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className={cn("border-slate-200/80", hasResume && "border-emerald-200 bg-emerald-50/40")}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Resume</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-2xl font-bold">{hasResume ? 'Ready' : 'Missing'}</div>
+            <p className="text-xs text-muted-foreground">
+              Upload your latest resume before running a new match cycle.
+            </p>
+            <Button variant={hasResume ? 'outline' : 'default'} size="sm" onClick={() => navigate('/resume')}>
+              {hasResume ? 'Review Resume' : 'Upload Resume'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className={cn("border-slate-200/80", hasProfile && "border-emerald-200 bg-emerald-50/40")}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Career Profile</CardTitle>
+            <Settings className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-2xl font-bold">{hasProfile ? 'Ready' : 'Missing'}</div>
+            <p className="text-xs text-muted-foreground">
+              Tell the system what roles, locations, and companies you care about.
+            </p>
+            <Button variant={hasProfile ? 'outline' : 'default'} size="sm" onClick={() => navigate('/preferences')}>
+              {hasProfile ? 'Edit Profile' : 'Create Profile'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200/80">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Manual Match</CardTitle>
+            <Briefcase className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-2xl font-bold">{tasks.length > 0 ? 'Active' : 'Not run yet'}</div>
+            <p className="text-xs text-muted-foreground">
+              Run Match from the Matches page whenever you want a fresh set of opportunities.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => navigate('/matches')}>
+              Open Matches
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Header & Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Daily Goal
+              Today
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -96,14 +168,14 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Total Opportunities
+              Application Queue
             </CardTitle>
             <Briefcase className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{tasks.length}</div>
             <p className="text-xs text-muted-foreground">
-              Jobs matched for you today
+              Matched roles currently in your task list
             </p>
           </CardContent>
         </Card>
@@ -129,7 +201,7 @@ export default function Dashboard() {
       {/* Task List */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold tracking-tight">Today's Matches</h2>
+          <h2 className="text-xl font-semibold tracking-tight">Today's Application Queue</h2>
         </div>
 
         {tasks.length === 0 ? (
@@ -137,10 +209,15 @@ export default function Dashboard() {
             <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
               <Briefcase className="h-6 w-6 text-muted-foreground" />
             </div>
-            <h3 className="font-medium text-lg">No matches found yet</h3>
+            <h3 className="font-medium text-lg">No tasks yet</h3>
             <p className="text-muted-foreground max-w-sm mt-2">
-              We're analyzing the job market for you. Make sure your resume and preferences are up to date.
+              Upload your resume, fill your Career Profile, then run Match manually from the Matches page. New tasks will appear here after that.
             </p>
+            <div className="mt-6">
+              <Button onClick={() => navigate('/matches')}>
+                Go to Matches
+              </Button>
+            </div>
           </Card>
         ) : (
           <motion.div 

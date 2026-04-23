@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileText, Settings, Briefcase, User, Sparkles, Menu, X, Shield, LogOut } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, Briefcase, User, Sparkles, Menu, X, Shield, LogOut, BookOpen } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useAuth } from './auth/AuthProvider'
 
 const navItems = [
-  { path: '/', label: 'Overview', icon: LayoutDashboard },
-  { path: '/resume', label: 'Resume Profile', icon: FileText },
-  { path: '/jobs', label: 'Matched Jobs', icon: Briefcase },
+  { path: '/', label: 'Today', icon: LayoutDashboard },
+  { path: '/resume', label: 'Resume', icon: FileText },
   { path: '/preferences', label: 'Career Profile', icon: Settings },
+  { path: '/matches', label: 'Matches', icon: Briefcase },
+  { path: '/interviews', label: 'Interview Prep', icon: BookOpen },
 ]
 
 export default function Layout() {
@@ -17,7 +18,8 @@ export default function Layout() {
   const fullNavItems = user?.role === 'admin'
     ? [...navItems, { path: '/admin', label: 'Admin Console', icon: Shield }]
     : navItems
-  const currentPage = fullNavItems.find(item => item.path === location.pathname)?.label || 'Dashboard'
+  const normalizedPath = location.pathname === '/jobs' ? '/matches' : location.pathname
+  const currentPage = fullNavItems.find(item => item.path === normalizedPath)?.label || 'Today'
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Close sidebar when route changes (mobile)

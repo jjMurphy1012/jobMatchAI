@@ -8,13 +8,23 @@ from fastapi.testclient import TestClient
 
 from app.api import admin as admin_api
 from app.api import auth as auth_api
+from app.api import interview_experiences as interview_api
 from app.api import jobs as jobs_api
 from app.api import resume as resume_api
 from app.api import tasks as tasks_api
 from app.api.deps import get_current_user, require_admin
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.models import Application, DailyTask, Opportunity, Resume, User, UserJobMatch
+from app.models.models import (
+    Application,
+    DailyTask,
+    InterviewExperience,
+    JobPreference,
+    Opportunity,
+    Resume,
+    User,
+    UserJobMatch,
+)
 from app.services.storage_service import StoredFile
 
 
@@ -468,3 +478,172 @@ def test_tasks_list_complete_uncomplete_and_stats():
     assert stats_response.status_code == 200
     assert stats_response.json()["today_total"] == 1
     assert stats_response.json()["today_remaining"] == 1
+
+
+def test_interview_experiences_are_ranked_by_company_and_keywords():
+    user = User(id="user-1", email="user@example.com", role="user", is_disabled=False)
+    preference = JobPreference(
+        id="pref-1",
+        user_id="user-1",
+        keywords="backend",
+        effective_fields={
+            "keywords": ["backend", "platform"],
+            "locations": [],
+            "is_intern": False,
+            "need_sponsor": False,
+            "excluded_companies": [],
+            "industries": [],
+        },
+        raw_text="Looking for backend platform roles.",
+    )
+    google_opportunity = Opportunity(
+        id="opp-1",
+        source_type="greenhouse",
+        source_job_id="g-1",
+        title="Backend Engineer",
+        company="Google",
+    )
+    google_match = UserJobMatch(
+        id="match-1",
+        user_id="user-1",
+        opportunity_id="opp-1",
+        opportunity=google_opportunity,
+        match_score=95,
+        last_scored_at=datetime.now(timezone.utc),
+    )
+    google_exp = InterviewExperience(
+        id="exp-1",
+        company_name="Google",
+        company_name_normalized="google",
+        role="Backend Engineer",
+        review_status="published",
+        topics=["Distributed Systems"],
+        summary="Strong backend and systems design focus.",
+        relevance_keywords=["backend", "distributed systems"],
+    )
+    meta_exp = InterviewExperience(
+        id="exp-2",
+        company_name="Meta",
+        company_name_normalized="meta",
+        role="Platform Engineer",
+        review_status="published",
+        topics=["Behavioral"],
+        summary="Platform-heavy loop with behavioral prep.",
+        relevance_keywords=["platform"],
+    )
+    draft_exp = InterviewExperience(
+        id="exp-3",
+        company_name="Amazon",
+        company_name_normalized="amazon",
+        role="SDE",
+        review_status="draft",
+        topics=[],
+        summary="Should not appear.",
+        relevance_keywords=[],
+    )
+    session = QueueSession(
+        FakeResult(value=preference),
+        FakeResult(items=[google_match]),
+        FakeResult(items=[google_exp, meta_exp, draft_exp]),
+    )
+    app = build_app(("/api/interview-experiences", interview_api.router))
+
+    async def override_db():
+        yield session
+
+    async def override_user():
+        return user
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = override_user
+
+    client = TestClient(app)
+    response = client.get("/api/interview-experiences")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["company_name"] for item in body] == ["Google", "Meta"]
+    assert body[0]["matched_company"] is True
+    assert all(item["company_name"] != "Amazon" for item in body)
+
+
+def test_admin_interview_experience_crud():
+    admin_user = User(id="admin-1", email="admin@example.com", role="admin", is_disabled=False)
+    existing = InterviewExperience(
+        id="exp-1",
+        company_name="Google",
+        company_name_normalized="google",
+        role="Backend Engineer",
+        review_status="published",
+        topics=["Algorithms"],
+        summary="Existing summary for admin listing.",
+        relevance_keywords=["backend"],
+    )
+    session = QueueSession(
+        FakeResult(items=[existing]),
+        FakeResult(value=existing),
+        FakeResult(value=existing),
+        FakeResult(value=existing),
+    )
+    app = build_app(("/api/admin", admin_api.router))
+
+    async def override_db():
+        yield session
+
+    async def override_admin():
+        return admin_user
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[require_admin] = override_admin
+
+    client = TestClient(app)
+
+    list_response = client.get("/api/admin/interview-experiences")
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["company_name"] == "Google"
+
+    create_response = client.post(
+        "/api/admin/interview-experiences",
+        json={
+            "company_name": "Netflix",
+            "role": "Platform Engineer",
+            "level": "senior",
+            "year": 2025,
+            "rounds": "Recruiter, coding, systems, behavioral",
+            "topics": ["Systems Design", "Behavioral"],
+            "summary": "Strong systems design emphasis with platform tradeoff questions.",
+            "source_url": "https://example.com/netflix",
+            "source_site": "LeetCode",
+            "review_status": "published",
+            "relevance_keywords": ["platform", "distributed systems"],
+        },
+    )
+    assert create_response.status_code == 201
+    created = session.added[0]
+    assert isinstance(created, InterviewExperience)
+    assert created.company_name_normalized == "netflix"
+    assert created.reviewed_by_user_id == "admin-1"
+
+    update_response = client.patch(
+        "/api/admin/interview-experiences/exp-1",
+        json={
+            "company_name": "Google",
+            "role": "Senior Backend Engineer",
+            "level": "senior",
+            "year": 2026,
+            "rounds": "Phone, virtual onsite",
+            "topics": ["Algorithms", "System Design"],
+            "summary": "Updated summary for backend-focused interview prep.",
+            "source_url": "https://example.com/google",
+            "source_site": "Blind",
+            "review_status": "draft",
+            "relevance_keywords": ["backend"],
+        },
+    )
+    assert update_response.status_code == 200
+    assert existing.role == "Senior Backend Engineer"
+    assert existing.review_status == "draft"
+
+    delete_response = client.delete("/api/admin/interview-experiences/exp-1")
+    assert delete_response.status_code == 200
+    assert existing in session.deleted

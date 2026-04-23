@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import admin, auth, jobs, preferences, resume, tasks
+from app.api import admin, auth, interview_experiences, jobs, preferences, resume, tasks
 from app.services.scheduler_service import scheduler_service
 
 
@@ -52,6 +52,7 @@ app.include_router(resume.router, prefix="/api/resume", tags=["Resume"])
 app.include_router(preferences.router, prefix="/api/preferences", tags=["Preferences"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(tasks.router, prefix="/api/daily-tasks", tags=["Daily Tasks"])
+app.include_router(interview_experiences.router, prefix="/api/interview-experiences", tags=["Interview Experiences"])
 
 
 @app.get("/health")
