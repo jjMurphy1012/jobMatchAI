@@ -20,14 +20,15 @@ export default function Jobs() {
   // Refresh Mutation
   const refreshMutation = useMutation({
     mutationFn: jobsApi.refresh,
-    onSuccess: () => {
-      // Invalidate and refetch jobs after a short delay to allow backend to process
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['jobs'] })
-      }, 2000)
-      
-      // Simple feedback for the user
-      alert("Search started! The AI is now scanning for new positions. This might take a few moments.")
+    onSuccess: (result) => {
+      if (result.error) {
+        alert(`Search failed: ${result.error}. Please try again later.`)
+        return
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+      const jobsFound = result.data?.jobs_found ?? 0
+      alert(`Search complete. The AI found ${jobsFound} matched position${jobsFound === 1 ? '' : 's'}.`)
     },
     onError: (error: any) => {
       console.error('Search failed:', error)
@@ -68,7 +69,7 @@ export default function Jobs() {
           <RefreshCw 
             className={`w-5 h-5 ${refreshMutation.isPending ? 'animate-spin' : ''}`} 
           />
-          {refreshMutation.isPending ? 'Analyzing Market...' : 'Run New Search'}
+          {refreshMutation.isPending ? 'Running Search...' : 'Run New Search'}
         </button>
       </div>
 
@@ -124,4 +125,3 @@ export default function Jobs() {
     </div>
   )
 }
-

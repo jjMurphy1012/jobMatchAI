@@ -23,6 +23,6 @@ RUN mkdir -p uploads
 # Expose port
 EXPOSE 8000
 
-# Run the application
+# Run migrations before starting the web server
 # Railway provides PORT environment variable
-CMD ["/bin/sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["/bin/sh", "-c", "alembic -c alembic.ini upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

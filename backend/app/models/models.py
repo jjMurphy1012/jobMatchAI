@@ -34,12 +34,11 @@ class Resume(Base):
     storage_bucket = Column(String, nullable=True)
     storage_path = Column(String, nullable=True)
     file_name = Column(String, nullable=False)
-    content = Column(Text, nullable=True)  # Parsed text content
+    content = Column(Text, nullable=True)
     embedding = Column(VECTOR_TYPE, nullable=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    # Relationships
     user = relationship("User", back_populates="resumes")
     chunks = relationship("ResumeChunk", back_populates="resume", cascade="all, delete-orphan")
 
@@ -55,7 +54,6 @@ class ResumeChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     resume = relationship("Resume", back_populates="chunks")
 
 
@@ -69,18 +67,16 @@ class JobPreference(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
 
-    # Job criteria
-    keywords = Column(Text, nullable=False)  # Comma-separated keywords
+    # Legacy structured fields — kept for backfill and agent_service reads.
+    # New writers populate raw_text + effective_fields; a follow-up migration will drop these.
+    keywords = Column(Text, nullable=False)  # Comma-separated
     location = Column(String, nullable=True)
     is_intern = Column(Boolean, default=False)
     need_sponsor = Column(Boolean, default=False)
-    experience_level = Column(String, nullable=True)  # entry, mid, senior
+    experience_level = Column(String, nullable=True)
+    job_description = Column(Text, nullable=True)
+    remote_preference = Column(String, nullable=True)
 
-    # Additional preferences
-    job_description = Column(Text, nullable=True)  # User's target job description
-    remote_preference = Column(String, nullable=True)  # remote, hybrid, onsite
-
-    # Free-form profile + extracted signals
     raw_text = Column(Text, nullable=True)
     extracted_fields = Column(JSON, nullable=True)
     override_fields = Column(JSON, nullable=True)
@@ -93,7 +89,6 @@ class JobPreference(Base):
     salary_max = Column(Integer, nullable=True)
     salary_currency = Column(String, nullable=True)
 
-    # Notification settings
     reminder_enabled = Column(Boolean, default=True)
     reminder_email = Column(String, nullable=True)
 
@@ -113,32 +108,26 @@ class Job(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
 
-    # Job info
     title = Column(String, nullable=False)
     company = Column(String, nullable=False)
     location = Column(String, nullable=True)
     salary = Column(String, nullable=True)
-    url = Column(String, nullable=True)  # LinkedIn job URL
+    url = Column(String, nullable=True)
     description = Column(Text, nullable=True)
 
-    # Match analysis
     match_score = Column(Integer, nullable=False)
     match_reason = Column(Text, nullable=True)
-    matched_skills = Column(Text, nullable=True)  # JSON string
-    missing_skills = Column(Text, nullable=True)  # JSON string
+    matched_skills = Column(Text, nullable=True)  # JSON-encoded list[str]
+    missing_skills = Column(Text, nullable=True)  # JSON-encoded list[str]
 
-    # Generated content
     cover_letter = Column(Text, nullable=True)
 
-    # Status
     is_applied = Column(Boolean, default=False)
     applied_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Metadata
     searched_at = Column(DateTime(timezone=True), server_default=func.now())
     linkedin_job_id = Column(String, nullable=True)
 
-    # Relationships
     user = relationship("User", back_populates="jobs")
     daily_task = relationship("DailyTask", back_populates="job", uselist=False)
 
@@ -150,15 +139,11 @@ class DailyTask(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     job_id = Column(String, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
 
-    # Task status
     date = Column(DateTime(timezone=True), server_default=func.now())
     is_completed = Column(Boolean, default=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
-
-    # Order in the daily list
     task_order = Column(Integer, nullable=False, default=0)
 
-    # Relationships
     job = relationship("Job", back_populates="daily_task")
 
 

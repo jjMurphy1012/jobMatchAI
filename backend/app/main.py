@@ -12,13 +12,20 @@ from app.services.scheduler_service import scheduler_service
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup
+    if not settings.DEBUG and settings.JWT_SECRET_KEY == "dev-only-change-me":
+        raise RuntimeError("JWT_SECRET_KEY must be set in non-debug environments.")
     await init_db()
-    scheduler_service.start()
+    if settings.ENABLE_SCHEDULER:
+        scheduler_service.start()
     print(f"🚀 {settings.APP_NAME} started!")
-    print(f"📅 Scheduler running - Daily push at {settings.PUSH_HOUR}:{settings.PUSH_MINUTE:02d} {settings.TIMEZONE}")
+    if settings.ENABLE_SCHEDULER:
+        print(f"📅 Scheduler running - Daily push at {settings.PUSH_HOUR}:{settings.PUSH_MINUTE:02d} {settings.TIMEZONE}")
+    else:
+        print("⏸️ Scheduler disabled for this process")
     yield
     # Shutdown
-    scheduler_service.stop()
+    if settings.ENABLE_SCHEDULER:
+        scheduler_service.stop()
     print(f"👋 {settings.APP_NAME} shutting down...")
 
 

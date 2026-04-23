@@ -1,13 +1,27 @@
-import { useEffect } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowRight, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react'
-import { Button } from '../components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { LockKeyhole, Mail } from 'lucide-react'
 import { useAuth } from '../components/auth/AuthProvider'
+import { AuthBrand, AuthDivider, AuthField, DesktopAuthPanel, GoogleMark } from '../components/auth/AuthPrimitives'
+import { Button } from '../components/ui/button'
 
 const errorMessages: Record<string, string> = {
   oauth_state_mismatch: 'Google sign-in could not be verified. Please try again.',
   google_exchange_failed: 'Google sign-in failed during token exchange. Check the backend OAuth configuration.',
+}
+
+function InlineAlert({ tone = 'neutral', message }: { tone?: 'neutral' | 'error'; message: string }) {
+  return (
+    <div
+      className={
+        tone === 'error'
+          ? 'rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700'
+          : 'rounded-[18px] border border-[#d7e2ff] bg-[#eef4ff] px-4 py-3 text-sm text-[#2455d6]'
+      }
+    >
+      {message}
+    </div>
+  )
 }
 
 export default function Login() {
@@ -16,6 +30,9 @@ export default function Login() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const errorCode = searchParams.get('error') || ''
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     if (!isLoading && user) {
@@ -24,70 +41,95 @@ export default function Login() {
     }
   }, [isLoading, location.state, navigate, user])
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!email || !password) {
+      setNotice('Enter both email and password if you want to stage the email login flow.')
+      return
+    }
+    setNotice('Email/password sign-in UI is ready, but the backend auth flow is still Google-only. Use Google to continue.')
+  }
+
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.12),_transparent_45%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)] px-6 py-12">
-      <div className="mx-auto grid min-h-[calc(100vh-6rem)] max-w-6xl items-center gap-10 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/70 px-4 py-2 text-sm font-medium text-indigo-700 shadow-sm backdrop-blur">
-            <Sparkles className="h-4 w-4" />
-            Google OAuth and RBAC are now part of the app shell
-          </div>
-          <div className="space-y-4">
-            <h1 className="max-w-3xl text-5xl font-semibold tracking-tight text-slate-900">
-              Sign in once. Keep your resume, preferences, matches, and tasks private.
-            </h1>
-            <p className="max-w-2xl text-lg leading-8 text-slate-600">
-              This workspace now separates every user&apos;s data and unlocks admin-only controls for source
-              management and upcoming interview-experience moderation.
-            </p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur">
-              <ShieldCheck className="mb-3 h-5 w-5 text-emerald-600" />
-              <h2 className="font-semibold text-slate-900">Private by default</h2>
-              <p className="mt-2 text-sm text-slate-600">Resume, career profile, jobs, and tasks are now scoped to your account.</p>
+    <div className="min-h-screen bg-[#f6f7fc] px-4 py-6 text-[#0f172a] sm:px-6 lg:px-8 lg:py-8">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-6xl flex-col lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(440px,500px)] lg:gap-8">
+        <DesktopAuthPanel mode="login" />
+
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-[430px]">
+            <div className="pb-10 pt-6 lg:hidden">
+              <AuthBrand centered />
             </div>
-            <div className="rounded-2xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur">
-              <LockKeyhole className="mb-3 h-5 w-5 text-indigo-600" />
-              <h2 className="font-semibold text-slate-900">Secure sessions</h2>
-              <p className="mt-2 text-sm text-slate-600">Short-lived access cookies plus refresh sessions keep sign-in persistent and revocable.</p>
-            </div>
-            <div className="rounded-2xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur">
-              <ArrowRight className="mb-3 h-5 w-5 text-amber-600" />
-              <h2 className="font-semibold text-slate-900">Admin-ready</h2>
-              <p className="mt-2 text-sm text-slate-600">The admin role is already wired for upcoming Greenhouse source management.</p>
+
+            <div className="rounded-[30px] border border-[#d7dced] bg-white px-6 py-8 shadow-[0_16px_48px_rgba(15,23,42,0.08)] sm:px-8">
+              <div className="space-y-3 text-center">
+                <h1 className="text-[2.6rem] font-semibold tracking-[-0.06em] text-[#0a1630]">Welcome back</h1>
+                <p className="text-[1.02rem] leading-8 text-[#5f6881]">Please enter your details to log in.</p>
+              </div>
+
+              <div className="mt-7 space-y-4">
+                {errorCode && <InlineAlert tone="error" message={errorMessages[errorCode] || decodeURIComponent(errorCode)} />}
+                {notice && <InlineAlert message={notice} />}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-[70px] w-full rounded-[18px] border-[#cfd6e7] text-[1rem] font-semibold text-[#0a1630] shadow-none hover:bg-[#f7f9ff]"
+                  onClick={loginWithGoogle}
+                >
+                  <GoogleMark />
+                  <span className="ml-3">Sign in with Google</span>
+                </Button>
+
+                <AuthDivider label="OR" />
+
+                <form className="space-y-5" onSubmit={handleSubmit}>
+                  <AuthField
+                    label="Email"
+                    icon={Mail}
+                    type="email"
+                    placeholder="name@company.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="email"
+                  />
+
+                  <AuthField
+                    label="Password"
+                    icon={LockKeyhole}
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    trailing={
+                      <button
+                        type="button"
+                        className="text-[0.95rem] font-medium text-[#1149d8] transition hover:text-[#0b3da9]"
+                        onClick={() =>
+                          setNotice('Password reset is not enabled yet. Google sign-in is the active auth path.')
+                        }
+                      >
+                        Forgot Password?
+                      </button>
+                    }
+                  />
+
+                  <Button className="mt-2 h-[68px] w-full rounded-[18px] bg-[#1149d8] text-[1rem] font-semibold text-white shadow-[0_12px_30px_rgba(17,73,216,0.28)] hover:bg-[#0b3fc0]">
+                    Log In
+                  </Button>
+                </form>
+
+                <p className="pt-2 text-center text-[1rem] text-[#5f6881]">
+                  Don&apos;t have an account?{' '}
+                  <Link to="/signup" className="font-semibold text-[#1149d8] transition hover:text-[#0b3da9]">
+                    Sign Up
+                  </Link>
+                </p>
+              </div>
             </div>
           </div>
         </div>
-
-        <Card className="border-white/70 bg-white/80 shadow-xl shadow-indigo-100 backdrop-blur">
-          <CardHeader className="space-y-3">
-            <CardTitle className="text-3xl text-slate-900">Continue with Google</CardTitle>
-            <CardDescription className="text-base text-slate-600">
-              Use your Google account to access your personalized job-matching workspace.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {errorCode && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {errorMessages[errorCode] || decodeURIComponent(errorCode)}
-              </div>
-            )}
-            <Button className="h-11 w-full gap-2 text-base" onClick={loginWithGoogle}>
-              Continue with Google
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-            <p className="text-sm leading-6 text-slate-500">
-              Admin role is granted either from your configured admin email list or later via the admin panel.
-            </p>
-            <p className="text-xs text-slate-400">
-              Need to change the allowed frontend origin or Google callback URL? Update the backend auth env vars first.
-            </p>
-            <Link to="/" className="inline-flex text-sm font-medium text-indigo-600 hover:text-indigo-500">
-              Health-check the existing app shell
-            </Link>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

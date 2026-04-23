@@ -5,6 +5,7 @@ import Admin from './pages/Admin'
 import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
+import SignUp from './pages/SignUp'
 import Resume from './pages/Resume'
 import Preferences from './pages/Preferences'
 import Jobs from './pages/Jobs'
@@ -13,6 +14,8 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<SignUp />} />
+      <Route path="/register" element={<SignUp />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
 
       <Route element={<ProtectedRoute />}>

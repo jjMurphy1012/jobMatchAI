@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || ''
+const API_BASE = ''
 
 interface ApiResponse<T> {
   data?: T;
@@ -91,26 +91,13 @@ export const adminApi = {
 export const resumeApi = {
   get: () => fetchApi<ResumeResponse>('/api/resume'),
 
-  upload: async (file: File) => {
+  upload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-
-    try {
-      const response = await request('/api/resume', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Upload failed' }))
-        return { error: error.detail, status: response.status }
-      }
-
-      const data = await response.json()
-      return { data, status: response.status }
-    } catch {
-      return { error: 'Network error', status: 0 }
-    }
+    return fetchApi<ResumeResponse>('/api/resume', {
+      method: 'POST',
+      body: formData,
+    })
   },
 
   delete: () => fetchApi('/api/resume', { method: 'DELETE' }),
@@ -144,7 +131,7 @@ export const jobsApi = {
 
   get: (id: string) => fetchApi<JobResponse>(`/api/jobs/${id}`),
 
-  refresh: () => fetchApi('/api/jobs/refresh', { method: 'POST' }),
+  refresh: () => fetchApi<JobRefreshResponse>('/api/jobs/refresh', { method: 'POST' }),
 
   markApplied: (id: string) =>
     fetchApi(`/api/jobs/${id}/apply`, { method: 'PUT' }),
@@ -272,6 +259,13 @@ export interface JobListResponse {
   jobs: JobResponse[];
   total: number;
   last_search?: string;
+}
+
+export interface JobRefreshResponse {
+  message: string;
+  status: 'completed';
+  jobs_found: number;
+  final_threshold?: number;
 }
 
 export interface DailyTask {

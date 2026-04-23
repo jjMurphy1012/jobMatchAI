@@ -111,7 +111,11 @@ class SchedulerService:
 
                 # Delete old jobs
                 await db.execute(
-                    delete(Job).where(Job.searched_at < cutoff_date)
+                    delete(Job).where(
+                        Job.searched_at < cutoff_date,
+                        Job.is_applied.is_(False),
+                        Job.cover_letter.is_(None),
+                    )
                 )
 
                 await db.commit()

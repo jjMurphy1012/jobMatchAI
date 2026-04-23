@@ -27,9 +27,11 @@ class Settings(BaseSettings):
     ACCESS_COOKIE_NAME: str = "jobmatch_access_token"
     REFRESH_COOKIE_NAME: str = "jobmatch_refresh_token"
     OAUTH_STATE_COOKIE_NAME: str = "jobmatch_oauth_state"
+    AUTH_RATE_LIMIT_MAX_REQUESTS: int = 10
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 60
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
+    GOOGLE_REDIRECT_URI: str = "http://localhost:5173/api/auth/google/callback"
     ADMIN_EMAILS: str = ""
 
     # Storage
@@ -63,16 +65,21 @@ class Settings(BaseSettings):
     DATA_RETENTION_DAYS: int = 7
 
     # Scheduler
+    ENABLE_SCHEDULER: bool = False
     PUSH_HOUR: int = 7  # 7 AM EST
     PUSH_MINUTE: int = 0
     TIMEZONE: str = "America/New_York"
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.BACKEND_CORS_ORIGINS.split(",") if origin.strip()]
+        return _split_csv(self.BACKEND_CORS_ORIGINS)
 
     @property
     def admin_emails(self) -> set[str]:
-        return {email.strip().lower() for email in self.ADMIN_EMAILS.split(",") if email.strip()}
+        return {email.lower() for email in _split_csv(self.ADMIN_EMAILS)}
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 settings = Settings()

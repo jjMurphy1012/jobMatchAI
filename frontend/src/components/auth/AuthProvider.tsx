@@ -33,7 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryKey: AUTH_QUERY_KEY,
     queryFn: fetchCurrentUser,
     retry: false,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   })
 
   const user = query.data ?? null

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+import logging
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
@@ -11,6 +12,7 @@ from app.models.models import Job, JobPreference, Resume, User
 from app.services.agent_service import JobMatchingAgent
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class JobResponse(BaseModel):
@@ -38,6 +40,13 @@ class JobListResponse(BaseModel):
     last_search: Optional[str]
 
 
+class JobRefreshResponse(BaseModel):
+    message: str
+    status: str
+    jobs_found: int = 0
+    final_threshold: Optional[int] = None
+
+
 @router.get("", response_model=JobListResponse)
 async def get_matched_jobs(
     skip: int = 0,
@@ -47,28 +56,31 @@ async def get_matched_jobs(
     current_user: User = Depends(get_current_user),
 ):
     """Get matched job recommendations."""
-    query = (
+    filters = (Job.user_id == current_user.id, Job.match_score >= min_score)
+
+    list_query = (
         select(Job)
-        .where(Job.user_id == current_user.id, Job.match_score >= min_score)
+        .where(*filters)
         .order_by(Job.match_score.desc(), Job.searched_at.desc())
         .offset(skip)
         .limit(limit)
     )
-
-    result = await db.execute(query)
-    jobs = result.scalars().all()
-
-    # Get total count
-    count_query = select(Job).where(Job.user_id == current_user.id, Job.match_score >= min_score)
-    count_result = await db.execute(count_query)
-    total = len(count_result.scalars().all())
-
-    # Get last search time
-    last_job = await db.execute(
-        select(Job).where(Job.user_id == current_user.id).order_by(Job.searched_at.desc()).limit(1)
+    count_query = select(func.count()).select_from(Job).where(*filters)
+    last_query = (
+        select(Job.searched_at)
+        .where(Job.user_id == current_user.id)
+        .order_by(Job.searched_at.desc())
+        .limit(1)
     )
-    last = last_job.scalar_one_or_none()
-    last_search = last.searched_at.isoformat() if last else None
+
+    list_result = await db.execute(list_query)
+    count_result = await db.execute(count_query)
+    last_result = await db.execute(last_query)
+
+    jobs = list_result.scalars().all()
+    total = count_result.scalar_one()
+    last_search_dt = last_result.scalar_one_or_none()
+    last_search = last_search_dt.isoformat() if last_search_dt else None
 
     return JobListResponse(
         jobs=[
@@ -124,13 +136,12 @@ async def get_job_detail(
     )
 
 
-@router.post("/refresh")
+@router.post("/refresh", response_model=JobRefreshResponse)
 async def refresh_jobs(
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Manually trigger a job search."""
+    """Run a job search synchronously for the current user."""
     # Check if resume exists
     resume_result = await db.execute(select(Resume).where(Resume.user_id == current_user.id).limit(1))
     resume = resume_result.scalar_one_or_none()
@@ -143,19 +154,26 @@ async def refresh_jobs(
     if not preferences:
         raise HTTPException(status_code=400, detail="Please set job preferences first")
 
-    # Run job search in background
-    background_tasks.add_task(run_job_search, current_user.id)
+    result = await run_job_search(current_user.id)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Job search failed"))
 
-    return {"message": "Job search started", "status": "processing"}
+    return JobRefreshResponse(
+        message=f"Job search completed with {result.get('jobs_found', 0)} matched jobs.",
+        status="completed",
+        jobs_found=result.get("jobs_found", 0),
+        final_threshold=result.get("final_threshold"),
+    )
 
 
 async def run_job_search(user_id: str):
-    """Background task to run the job matching agent."""
+    """Run the job matching agent and return its result."""
     try:
         agent = JobMatchingAgent(user_id=user_id)
-        await agent.run()
+        return await agent.run()
     except Exception as e:
-        print(f"Job search error: {e}")
+        logger.exception("Job search error for user %s", user_id)
+        return {"success": False, "error": str(e)}
 
 
 @router.put("/{job_id}/apply")

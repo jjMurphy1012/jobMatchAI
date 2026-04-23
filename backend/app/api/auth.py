@@ -9,11 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import InMemoryRateLimiter
 from app.core.security import generate_refresh_token
 from app.models.models import User
 from app.services.auth_service import auth_service
 
 router = APIRouter()
+auth_rate_limiter = InMemoryRateLimiter()
 
 
 class CurrentUserResponse(BaseModel):
@@ -31,23 +33,18 @@ class LogoutResponse(BaseModel):
     message: str
 
 
-def serialize_user(user: User) -> CurrentUserResponse:
-    return CurrentUserResponse(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        avatar_url=user.avatar_url,
-        role=user.role,
-        is_disabled=user.is_disabled,
-    )
-
-
 def _frontend_error_redirect(error_code: str) -> str:
     return f"{settings.FRONTEND_URL}/login?error={quote(error_code)}"
 
 
 @router.get("/google/login")
-async def start_google_login():
+async def start_google_login(request: Request):
+    auth_rate_limiter.enforce(
+        request=request,
+        bucket="google_login",
+        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
     state = generate_refresh_token()
     response = RedirectResponse(auth_service.build_google_login_url(state), status_code=status.HTTP_302_FOUND)
     response.set_cookie(
@@ -71,6 +68,12 @@ async def complete_google_login(
     stored_state: str | None = Cookie(default=None, alias=settings.OAUTH_STATE_COOKIE_NAME),
     db: AsyncSession = Depends(get_db),
 ):
+    auth_rate_limiter.enforce(
+        request=request,
+        bucket="google_callback",
+        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
     if not code or not state or not stored_state or stored_state != state:
         response = RedirectResponse(_frontend_error_redirect("oauth_state_mismatch"), status_code=status.HTTP_302_FOUND)
         auth_service.clear_auth_cookies(response)
@@ -99,7 +102,7 @@ async def complete_google_login(
 
 @router.get("/me", response_model=CurrentUserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
-    return serialize_user(current_user)
+    return CurrentUserResponse.model_validate(current_user)
 
 
 @router.post("/refresh", response_model=CurrentUserResponse)
@@ -113,7 +116,7 @@ async def refresh_session(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token missing.")
     bundle = await auth_service.rotate_refresh_session(db, refresh_token, request)
     auth_service.set_auth_cookies(response, bundle)
-    return serialize_user(bundle.user)
+    return CurrentUserResponse.model_validate(bundle.user)
 
 
 @router.post("/logout", response_model=LogoutResponse)

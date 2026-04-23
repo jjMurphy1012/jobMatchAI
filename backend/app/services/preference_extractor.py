@@ -85,13 +85,14 @@ class PreferenceAnalysisResult(BaseModel):
 
 class PreferenceExtractorService:
     def __init__(self):
-        self.llm = None
+        self.structured_llm = None
         if settings.OPENAI_API_KEY:
-            self.llm = ChatOpenAI(
+            llm = ChatOpenAI(
                 model="gpt-4o-mini",
                 openai_api_key=settings.OPENAI_API_KEY,
                 temperature=0,
             )
+            self.structured_llm = llm.with_structured_output(PreferenceStructuredFields)
 
     async def analyze(
         self,
@@ -142,12 +143,9 @@ class PreferenceExtractorService:
         }
 
     async def _extract_fields(self, raw_text: str) -> tuple[PreferenceStructuredFields, bool]:
-        if self.llm:
+        if self.structured_llm:
             try:
-                structured_llm = self.llm.with_structured_output(PreferenceStructuredFields)
-                response = await structured_llm.ainvoke(
-                    self._prompt(raw_text)
-                )
+                response = await self.structured_llm.ainvoke(self._prompt(raw_text))
                 return self._normalize_fields(response), False
             except Exception as exc:
                 logger.warning("Preference extraction fell back to heuristics: %s", exc)

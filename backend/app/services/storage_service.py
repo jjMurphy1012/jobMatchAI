@@ -60,6 +60,7 @@ class SupabaseStorageService(BaseStorageService):
         self.base_url = settings.SUPABASE_URL.rstrip("/")
         self.bucket = settings.SUPABASE_RESUME_BUCKET
         self.api_key = settings.SUPABASE_SERVICE_ROLE_KEY
+        self._client = httpx.AsyncClient(timeout=30.0)
 
     def _headers(self, content_type: Optional[str] = None) -> dict[str, str]:
         headers = {
@@ -76,13 +77,12 @@ class SupabaseStorageService(BaseStorageService):
         content_type = mimetypes.guess_type(file_name)[0] or "application/pdf"
         url = f"{self.base_url}/storage/v1/object/{self.bucket}/{object_path}"
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                url,
-                headers={**self._headers(content_type), "x-upsert": "true"},
-                content=content,
-            )
-            response.raise_for_status()
+        response = await self._client.post(
+            url,
+            headers={**self._headers(content_type), "x-upsert": "true"},
+            content=content,
+        )
+        response.raise_for_status()
 
         return StoredFile(provider="supabase", bucket=self.bucket, path=object_path)
 
@@ -91,10 +91,9 @@ class SupabaseStorageService(BaseStorageService):
             return
 
         url = f"{self.base_url}/storage/v1/object/{stored_file.bucket}/{stored_file.path}"
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.delete(url, headers=self._headers())
-            if response.status_code not in (200, 204, 404):
-                response.raise_for_status()
+        response = await self._client.delete(url, headers=self._headers())
+        if response.status_code not in (200, 204, 404):
+            response.raise_for_status()
 
     async def create_download_url(self, stored_file: StoredFile) -> Optional[str]:
         if not stored_file.bucket:
@@ -103,10 +102,9 @@ class SupabaseStorageService(BaseStorageService):
         url = f"{self.base_url}/storage/v1/object/sign/{stored_file.bucket}/{stored_file.path}"
         payload = {"expiresIn": settings.SUPABASE_SIGNED_URL_TTL_SECONDS}
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, headers=self._headers("application/json"), json=payload)
-            response.raise_for_status()
-            data = response.json()
+        response = await self._client.post(url, headers=self._headers("application/json"), json=payload)
+        response.raise_for_status()
+        data = response.json()
 
         signed_url = data.get("signedURL")
         if not signed_url:

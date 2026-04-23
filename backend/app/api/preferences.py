@@ -10,6 +10,7 @@ from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.models import JobPreference, User
 from app.services.preference_extractor import (
+    EXTRACTION_VERSION,
     PreferenceAnalysisResult,
     PreferenceExtractorService,
     PreferenceFieldOverrides,
@@ -177,15 +178,6 @@ async def create_or_update_preferences(
     return serialize_preference(preference)
 
 
-@router.put("", response_model=PreferenceResponse)
-async def update_preferences(
-    data: PreferenceUpsertRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    return await create_or_update_preferences(data, db, current_user)
-
-
 @router.patch("/fields", response_model=PreferenceResponse)
 async def patch_preference_fields(
     data: PreferencePatchRequest,
@@ -206,7 +198,7 @@ async def patch_preference_fields(
     analysis = PreferenceAnalysisResult(
         extracted_fields=extracted_fields,
         effective_fields=effective_fields,
-        extraction_version=preference.extraction_version or "profile-extractor-v1",
+        extraction_version=preference.extraction_version or EXTRACTION_VERSION,
         extracted_at=preference.extracted_at or datetime.utcnow(),
     )
 
