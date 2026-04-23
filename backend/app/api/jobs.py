@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 import logging
 from typing import List, Optional
@@ -103,9 +104,11 @@ async def get_matched_jobs(
         .limit(1)
     )
 
-    list_result = await db.execute(list_query)
-    count_result = await db.execute(count_query)
-    last_result = await db.execute(last_query)
+    list_result, count_result, last_result = await asyncio.gather(
+        db.execute(list_query),
+        db.execute(count_query),
+        db.execute(last_query),
+    )
 
     jobs = list_result.scalars().all()
     total = count_result.scalar_one()
