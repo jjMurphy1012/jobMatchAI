@@ -285,6 +285,46 @@ def test_preferences_round_trip_with_overrides(monkeypatch):
     assert current["reminder_email"] == "user@example.com"
 
 
+def test_preferences_analyze_returns_preview(monkeypatch):
+    app = build_app(("/api/preferences", preferences_api.router))
+    user = User(id="user-1", email="user@example.com", role="user", is_disabled=False)
+
+    async def override_db():
+        yield None
+
+    async def override_user():
+        return user
+
+    async def fake_analyze(raw_text, overrides=None):
+        extracted = PreferenceStructuredFields(
+            keywords=["Backend", "Platform"],
+            locations=["Remote"],
+            need_sponsor=False,
+            remote_preference="remote",
+        )
+        return PreferenceAnalysisResult(
+            extracted_fields=extracted,
+            effective_fields=extracted,
+            used_fallback=True,
+        )
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = override_user
+    monkeypatch.setattr(preferences_api.extractor_service, "analyze", fake_analyze)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/preferences/analyze",
+        json={"raw_text": "Looking for remote backend platform roles."},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["raw_text"] == "Looking for remote backend platform roles."
+    assert body["effective_fields"]["keywords"] == ["Backend", "Platform"]
+    assert body["used_fallback"] is True
+
+
 def test_jobs_refresh_runs_synchronously(monkeypatch):
     session = FakeJobsRefreshSession(
         Resume(user_id="user-1", file_name="resume.pdf"),

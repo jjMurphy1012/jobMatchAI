@@ -1,16 +1,17 @@
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
+from datetime import datetime
 from typing import List, Optional
-from datetime import datetime, date
+
 import pytz
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
-from app.core.database import get_db
 from app.core.config import settings
-from app.models.models import DailyTask, Job, User
+from app.core.database import get_db
+from app.models.models import Application, DailyTask, User, UserJobMatch
 
 router = APIRouter()
 
@@ -18,6 +19,8 @@ eastern = pytz.timezone(settings.TIMEZONE)
 
 
 class TaskJobInfo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     title: str
     company: str
@@ -25,20 +28,14 @@ class TaskJobInfo(BaseModel):
     url: Optional[str]
     match_score: int
 
-    class Config:
-        from_attributes = True
-
-
 class DailyTaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     job: TaskJobInfo
     is_completed: bool
     completed_at: Optional[str]
     task_order: int
-
-    class Config:
-        from_attributes = True
-
 
 class DailyTasksListResponse(BaseModel):
     tasks: List[DailyTaskResponse]
@@ -54,7 +51,72 @@ class TaskStatsResponse(BaseModel):
     today_remaining: int
     completion_rate: float
     all_completed: bool
-    streak_days: int  # Consecutive days with all tasks completed
+    streak_days: int
+
+
+def _build_task_response(task: DailyTask) -> DailyTaskResponse:
+    user_match = task.user_job_match
+    opportunity = user_match.opportunity
+    return DailyTaskResponse(
+        id=task.id,
+        job=TaskJobInfo(
+            id=user_match.id,
+            title=opportunity.title,
+            company=opportunity.company,
+            location=opportunity.location,
+            url=opportunity.url,
+            match_score=user_match.match_score,
+        ),
+        is_completed=task.is_completed,
+        completed_at=task.completed_at.isoformat() if task.completed_at else None,
+        task_order=task.task_order,
+    )
+
+
+async def _load_task(
+    db: AsyncSession,
+    task_id: str,
+    user_id: str,
+) -> Optional[DailyTask]:
+    result = await db.execute(
+        select(DailyTask)
+        .join(DailyTask.user_job_match)
+        .options(
+            selectinload(DailyTask.user_job_match).selectinload(UserJobMatch.opportunity),
+            selectinload(DailyTask.user_job_match).selectinload(UserJobMatch.application),
+        )
+        .where(DailyTask.id == task_id, UserJobMatch.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _set_application_status(
+    db: AsyncSession,
+    task: DailyTask,
+    user_id: str,
+    status: str,
+    applied_at: Optional[datetime],
+) -> None:
+    user_match = task.user_job_match
+    application = user_match.application
+    now = datetime.now(eastern)
+
+    if application is None:
+        db.add(
+            Application(
+                user_id=user_id,
+                opportunity_id=user_match.opportunity_id,
+                user_job_match_id=user_match.id,
+                status=status,
+                applied_at=applied_at,
+                status_updated_at=now,
+            )
+        )
+        return
+
+    application.status = status
+    application.applied_at = applied_at
+    application.status_updated_at = now
 
 
 @router.get("", response_model=DailyTasksListResponse)
@@ -65,40 +127,21 @@ async def get_daily_tasks(
     """Get today's daily tasks."""
     today = datetime.now(eastern).date()
 
-    # Get today's tasks with job info (eager load job relationship)
     query = (
         select(DailyTask)
-        .join(DailyTask.job)
-        .options(selectinload(DailyTask.job))
-        .where(func.date(DailyTask.date) == today, Job.user_id == current_user.id)
+        .join(DailyTask.user_job_match)
+        .options(
+            selectinload(DailyTask.user_job_match).selectinload(UserJobMatch.opportunity),
+            selectinload(DailyTask.user_job_match).selectinload(UserJobMatch.application),
+        )
+        .where(func.date(DailyTask.date) == today, UserJobMatch.user_id == current_user.id)
         .order_by(DailyTask.task_order)
     )
     result = await db.execute(query)
     tasks = result.scalars().all()
 
-    # Build response
-    task_responses = []
-    completed_count = 0
-
-    for task in tasks:
-        if task.is_completed:
-            completed_count += 1
-
-        task_responses.append(DailyTaskResponse(
-            id=task.id,
-            job=TaskJobInfo(
-                id=task.job.id,
-                title=task.job.title,
-                company=task.job.company,
-                location=task.job.location,
-                url=task.job.url,
-                match_score=task.job.match_score
-            ),
-            is_completed=task.is_completed,
-            completed_at=task.completed_at.isoformat() if task.completed_at else None,
-            task_order=task.task_order
-        ))
-
+    task_responses = [_build_task_response(task) for task in tasks]
+    completed_count = sum(1 for task in tasks if task.is_completed)
     total = len(task_responses)
     all_done = completed_count == total and total > 0
 
@@ -107,7 +150,7 @@ async def get_daily_tasks(
         total=total,
         completed=completed_count,
         date=today.isoformat(),
-        all_completed=all_done
+        all_completed=all_done,
     )
 
 
@@ -118,32 +161,21 @@ async def complete_task(
     current_user: User = Depends(get_current_user),
 ):
     """Mark a daily task as completed."""
-    result = await db.execute(
-        select(DailyTask)
-        .join(DailyTask.job)
-        .options(selectinload(DailyTask.job))
-        .where(DailyTask.id == task_id, Job.user_id == current_user.id)
-    )
-    task = result.scalar_one_or_none()
-
+    task = await _load_task(db, task_id, current_user.id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    now = datetime.now(eastern)
     task.is_completed = True
-    task.completed_at = datetime.now(eastern)
-
-    # Also mark the job as applied
-    task.job.is_applied = True
-    task.job.applied_at = datetime.now(eastern)
-
+    task.completed_at = now
+    await _set_application_status(db, task, current_user.id, "applied", now)
     await db.commit()
 
-    # Check if all tasks are completed
     today = datetime.now(eastern).date()
     all_tasks = await db.execute(
         select(DailyTask)
-        .join(DailyTask.job)
-        .where(func.date(DailyTask.date) == today, Job.user_id == current_user.id)
+        .join(DailyTask.user_job_match)
+        .where(func.date(DailyTask.date) == today, UserJobMatch.user_id == current_user.id)
     )
     tasks = all_tasks.scalars().all()
     all_completed = all(t.is_completed for t in tasks)
@@ -152,7 +184,7 @@ async def complete_task(
         "message": "Task completed!",
         "task_id": task_id,
         "all_completed": all_completed,
-        "celebration_message": "🎉 今日任务已完成！Great job!" if all_completed else None
+        "celebration_message": "🎉 今日任务已完成！Great job!" if all_completed else None,
     }
 
 
@@ -163,22 +195,13 @@ async def uncomplete_task(
     current_user: User = Depends(get_current_user),
 ):
     """Unmark a daily task as completed."""
-    result = await db.execute(
-        select(DailyTask)
-        .join(DailyTask.job)
-        .options(selectinload(DailyTask.job))
-        .where(DailyTask.id == task_id, Job.user_id == current_user.id)
-    )
-    task = result.scalar_one_or_none()
-
+    task = await _load_task(db, task_id, current_user.id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     task.is_completed = False
     task.completed_at = None
-    task.job.is_applied = False
-    task.job.applied_at = None
-
+    await _set_application_status(db, task, current_user.id, "saved", None)
     await db.commit()
 
     return {"message": "Task marked as incomplete", "task_id": task_id}
@@ -192,21 +215,18 @@ async def get_task_stats(
     """Get task completion statistics."""
     today = datetime.now(eastern).date()
 
-    # Today's stats
     today_query = (
         select(DailyTask)
-        .join(DailyTask.job)
-        .where(func.date(DailyTask.date) == today, Job.user_id == current_user.id)
+        .join(DailyTask.user_job_match)
+        .where(func.date(DailyTask.date) == today, UserJobMatch.user_id == current_user.id)
     )
     today_result = await db.execute(today_query)
     today_tasks = today_result.scalars().all()
 
     total = len(today_tasks)
-    completed = sum(1 for t in today_tasks if t.is_completed)
+    completed = sum(1 for task in today_tasks if task.is_completed)
     rate = (completed / total * 100) if total > 0 else 0
     all_done = completed == total and total > 0
-
-    # Calculate streak (simplified - just check if today is done)
     streak = 1 if all_done else 0
 
     return TaskStatsResponse(
@@ -215,5 +235,5 @@ async def get_task_stats(
         today_remaining=total - completed,
         completion_rate=round(rate, 1),
         all_completed=all_done,
-        streak_days=streak
+        streak_days=streak,
     )

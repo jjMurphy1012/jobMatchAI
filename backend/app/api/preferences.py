@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -199,7 +199,7 @@ async def patch_preference_fields(
         extracted_fields=extracted_fields,
         effective_fields=effective_fields,
         extraction_version=preference.extraction_version or EXTRACTION_VERSION,
-        extracted_at=preference.extracted_at or datetime.utcnow(),
+        extracted_at=preference.extracted_at or datetime.now(timezone.utc),
     )
 
     apply_preference_payload(

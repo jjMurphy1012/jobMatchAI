@@ -1,21 +1,27 @@
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.models.models import Job, JobPreference, Resume, User
+from app.models.models import Application, JobPreference, Resume, User, UserJobMatch
 from app.services.agent_service import JobMatchingAgent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+APPLIED_STATUSES = {"applying", "applied", "interviewing", "offer"}
+
 
 class JobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     title: str
     company: str
@@ -29,10 +35,7 @@ class JobResponse(BaseModel):
     cover_letter: Optional[str]
     is_applied: bool
     searched_at: str
-
-    class Config:
-        from_attributes = True
-
+    application_status: Optional[str] = None
 
 class JobListResponse(BaseModel):
     jobs: List[JobResponse]
@@ -47,6 +50,29 @@ class JobRefreshResponse(BaseModel):
     final_threshold: Optional[int] = None
 
 
+def _build_job_response(user_match: UserJobMatch) -> JobResponse:
+    opportunity = user_match.opportunity
+    application = user_match.application
+    searched_at = user_match.last_scored_at or user_match.created_at
+
+    return JobResponse(
+        id=user_match.id,
+        title=opportunity.title,
+        company=opportunity.company,
+        location=opportunity.location,
+        salary=opportunity.salary,
+        url=opportunity.url,
+        match_score=user_match.match_score,
+        match_reason=user_match.match_reason,
+        matched_skills=user_match.matched_skills,
+        missing_skills=user_match.missing_skills,
+        cover_letter=user_match.cover_letter,
+        is_applied=bool(application and application.status in APPLIED_STATUSES),
+        searched_at=searched_at.isoformat() if searched_at else "",
+        application_status=application.status if application else None,
+    )
+
+
 @router.get("", response_model=JobListResponse)
 async def get_matched_jobs(
     skip: int = 0,
@@ -56,20 +82,24 @@ async def get_matched_jobs(
     current_user: User = Depends(get_current_user),
 ):
     """Get matched job recommendations."""
-    filters = (Job.user_id == current_user.id, Job.match_score >= min_score)
+    filters = (UserJobMatch.user_id == current_user.id, UserJobMatch.match_score >= min_score)
 
     list_query = (
-        select(Job)
+        select(UserJobMatch)
+        .options(
+            selectinload(UserJobMatch.opportunity),
+            selectinload(UserJobMatch.application),
+        )
         .where(*filters)
-        .order_by(Job.match_score.desc(), Job.searched_at.desc())
+        .order_by(UserJobMatch.match_score.desc(), UserJobMatch.last_scored_at.desc())
         .offset(skip)
         .limit(limit)
     )
-    count_query = select(func.count()).select_from(Job).where(*filters)
+    count_query = select(func.count()).select_from(UserJobMatch).where(*filters)
     last_query = (
-        select(Job.searched_at)
-        .where(Job.user_id == current_user.id)
-        .order_by(Job.searched_at.desc())
+        select(UserJobMatch.last_scored_at)
+        .where(UserJobMatch.user_id == current_user.id)
+        .order_by(UserJobMatch.last_scored_at.desc())
         .limit(1)
     )
 
@@ -83,26 +113,9 @@ async def get_matched_jobs(
     last_search = last_search_dt.isoformat() if last_search_dt else None
 
     return JobListResponse(
-        jobs=[
-            JobResponse(
-                id=job.id,
-                title=job.title,
-                company=job.company,
-                location=job.location,
-                salary=job.salary,
-                url=job.url,
-                match_score=job.match_score,
-                match_reason=job.match_reason,
-                matched_skills=job.matched_skills,
-                missing_skills=job.missing_skills,
-                cover_letter=job.cover_letter,
-                is_applied=job.is_applied,
-                searched_at=job.searched_at.isoformat()
-            )
-            for job in jobs
-        ],
+        jobs=[_build_job_response(job) for job in jobs],
         total=total,
-        last_search=last_search
+        last_search=last_search,
     )
 
 
@@ -113,27 +126,20 @@ async def get_job_detail(
     current_user: User = Depends(get_current_user),
 ):
     """Get a specific job's details."""
-    result = await db.execute(select(Job).where(Job.id == job_id, Job.user_id == current_user.id))
-    job = result.scalar_one_or_none()
+    result = await db.execute(
+        select(UserJobMatch)
+        .options(
+            selectinload(UserJobMatch.opportunity),
+            selectinload(UserJobMatch.application),
+        )
+        .where(UserJobMatch.id == job_id, UserJobMatch.user_id == current_user.id)
+    )
+    user_match = result.scalar_one_or_none()
 
-    if not job:
+    if not user_match:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    return JobResponse(
-        id=job.id,
-        title=job.title,
-        company=job.company,
-        location=job.location,
-        salary=job.salary,
-        url=job.url,
-        match_score=job.match_score,
-        match_reason=job.match_reason,
-        matched_skills=job.matched_skills,
-        missing_skills=job.missing_skills,
-        cover_letter=job.cover_letter,
-        is_applied=job.is_applied,
-        searched_at=job.searched_at.isoformat()
-    )
+    return _build_job_response(user_match)
 
 
 @router.post("/refresh", response_model=JobRefreshResponse)
@@ -142,13 +148,11 @@ async def refresh_jobs(
     current_user: User = Depends(get_current_user),
 ):
     """Run a job search synchronously for the current user."""
-    # Check if resume exists
     resume_result = await db.execute(select(Resume).where(Resume.user_id == current_user.id).limit(1))
     resume = resume_result.scalar_one_or_none()
     if not resume:
         raise HTTPException(status_code=400, detail="Please upload a resume first")
 
-    # Check if preferences exist
     pref_result = await db.execute(select(JobPreference).where(JobPreference.user_id == current_user.id).limit(1))
     preferences = pref_result.scalar_one_or_none()
     if not preferences:
@@ -183,14 +187,36 @@ async def mark_job_applied(
     current_user: User = Depends(get_current_user),
 ):
     """Mark a job as applied."""
-    result = await db.execute(select(Job).where(Job.id == job_id, Job.user_id == current_user.id))
-    job = result.scalar_one_or_none()
+    result = await db.execute(
+        select(UserJobMatch)
+        .options(
+            selectinload(UserJobMatch.opportunity),
+            selectinload(UserJobMatch.application),
+        )
+        .where(UserJobMatch.id == job_id, UserJobMatch.user_id == current_user.id)
+    )
+    user_match = result.scalar_one_or_none()
 
-    if not job:
+    if not user_match:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    job.is_applied = True
-    job.applied_at = datetime.utcnow()
+    now = datetime.now(timezone.utc)
+    if user_match.application is None:
+        db.add(
+            Application(
+                user_id=current_user.id,
+                opportunity_id=user_match.opportunity_id,
+                user_job_match_id=user_match.id,
+                status="applied",
+                applied_at=now,
+                status_updated_at=now,
+            )
+        )
+    else:
+        user_match.application.status = "applied"
+        user_match.application.applied_at = now
+        user_match.application.status_updated_at = now
+
     await db.commit()
 
     return {"message": "Job marked as applied", "job_id": job_id}

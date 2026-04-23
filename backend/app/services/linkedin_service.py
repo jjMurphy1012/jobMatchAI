@@ -78,14 +78,16 @@ class LinkedInService:
 
             for job in jobs[:30]:  # Limit initial fetch
                 processed.append({
-                    "linkedin_job_id": f"remotive-{job.get('id', uuid.uuid4().hex[:8])}",
+                    "source_type": "remotive",
+                    "source_job_id": str(job.get("id", uuid.uuid4().hex[:8])),
                     "title": job.get("title", "Unknown"),
                     "company": job.get("company_name", "Unknown"),
                     "location": job.get("candidate_required_location", "Remote"),
                     "salary": job.get("salary", ""),
                     "url": job.get("url", ""),
                     "description": job.get("description", "")[:2000],
-                    "posted_at": job.get("publication_date", "")
+                    "posted_at": job.get("publication_date", ""),
+                    "raw_payload": job,
                 })
 
             logger.info(f"Remotive returned {len(processed)} jobs")
@@ -107,14 +109,16 @@ class LinkedInService:
 
             for job in jobs[:30]:  # Limit initial fetch
                 processed.append({
-                    "linkedin_job_id": f"arbeitnow-{job.get('slug', uuid.uuid4().hex[:8])}",
+                    "source_type": "arbeitnow",
+                    "source_job_id": str(job.get("slug", uuid.uuid4().hex[:8])),
                     "title": job.get("title", "Unknown"),
                     "company": job.get("company_name", "Unknown"),
                     "location": job.get("location", ""),
                     "salary": "",  # Arbeitnow doesn't provide salary
                     "url": job.get("url", ""),
                     "description": job.get("description", "")[:2000],
-                    "posted_at": job.get("created_at", "")
+                    "posted_at": job.get("created_at", ""),
+                    "raw_payload": job,
                 })
 
             logger.info(f"Arbeitnow returned {len(processed)} jobs")
@@ -133,14 +137,16 @@ class LinkedInService:
         url = f"https://www.linkedin.com/jobs/view/{job_id}" if job_id else None
 
         return {
-            "linkedin_job_id": job_id,
+            "source_type": "linkedin",
+            "source_job_id": job_id,
             "title": job.get("title", "Unknown Title"),
             "company": job.get("companyName", "Unknown Company"),
             "location": job.get("formattedLocation", ""),
             "salary": job.get("salaryInsights", {}).get("formattedSalary", ""),
             "url": url,
             "description": job.get("description", {}).get("text", "") if isinstance(job.get("description"), dict) else str(job.get("description", "")),
-            "posted_at": job.get("listedAt", "")
+            "posted_at": job.get("listedAt", ""),
+            "raw_payload": job,
         }
 
     async def get_job_details(self, job_id: str) -> Optional[dict]:

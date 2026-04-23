@@ -274,6 +274,7 @@ export interface JobResponse {
   cover_letter?: string;
   is_applied: boolean;
   searched_at: string;
+  application_status?: string;
 }
 
 export interface JobListResponse {

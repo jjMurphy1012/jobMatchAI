@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 import logging
 import re
@@ -79,7 +79,7 @@ class PreferenceAnalysisResult(BaseModel):
     extracted_fields: PreferenceStructuredFields
     effective_fields: PreferenceStructuredFields
     extraction_version: str = EXTRACTION_VERSION
-    extracted_at: datetime = Field(default_factory=datetime.utcnow)
+    extracted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     used_fallback: bool = False
 
 

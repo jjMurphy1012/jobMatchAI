@@ -2,7 +2,7 @@
 
 An intelligent job matching and recommendation system powered by **LangChain**, **LangGraph**, and **RAG** (Retrieval-Augmented Generation). The system automatically searches for relevant job positions, analyzes resume-job compatibility using AI, generates personalized cover letters, and delivers daily job recommendations.
 
-> **Live Demo**: [https://jobmatchai-frontend-production.up.railway.app](https://welcoming-mindfulness-production-e40c.up.railway.app)
+> **Live Demo**: [https://welcoming-mindfulness-production-e40c.up.railway.app](https://welcoming-mindfulness-production-e40c.up.railway.app)
 
 ---
 

@@ -132,12 +132,95 @@ class Job(Base):
     daily_task = relationship("DailyTask", back_populates="job", uselist=False)
 
 
+class Opportunity(Base):
+    """Global job opportunity shared across users."""
+    __tablename__ = "opportunities"
+    __table_args__ = (
+        UniqueConstraint("source_type", "source_job_id", name="uq_opportunities_source_job"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    source_type = Column(String, nullable=False)
+    source_job_id = Column(String, nullable=False)
+
+    title = Column(String, nullable=False)
+    company = Column(String, nullable=False)
+    location = Column(String, nullable=True)
+    salary = Column(String, nullable=True)
+    url = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    raw_payload = Column(JSON, nullable=True)
+
+    is_open = Column(Boolean, nullable=False, default=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    first_seen_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user_job_matches = relationship("UserJobMatch", back_populates="opportunity", cascade="all, delete-orphan")
+    applications = relationship("Application", back_populates="opportunity", cascade="all, delete-orphan")
+
+
+class UserJobMatch(Base):
+    """User-specific evaluation of an opportunity."""
+    __tablename__ = "user_job_matches"
+    __table_args__ = (
+        UniqueConstraint("user_id", "opportunity_id", name="uq_user_job_matches_user_opportunity"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    opportunity_id = Column(String, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    match_score = Column(Integer, nullable=False)
+    match_reason = Column(Text, nullable=True)
+    matched_skills = Column(Text, nullable=True)
+    missing_skills = Column(Text, nullable=True)
+    cover_letter = Column(Text, nullable=True)
+
+    last_scored_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="user_job_matches")
+    opportunity = relationship("Opportunity", back_populates="user_job_matches")
+    daily_tasks = relationship("DailyTask", back_populates="user_job_match", cascade="all, delete-orphan")
+    application = relationship("Application", back_populates="user_job_match", uselist=False, cascade="all, delete-orphan")
+
+
+class Application(Base):
+    """Persistent application lifecycle state for a user and opportunity."""
+    __tablename__ = "applications"
+    __table_args__ = (
+        UniqueConstraint("user_id", "opportunity_id", name="uq_applications_user_opportunity"),
+        UniqueConstraint("user_job_match_id", name="uq_applications_user_job_match"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    opportunity_id = Column(String, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_job_match_id = Column(String, ForeignKey("user_job_matches.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    status = Column(String, nullable=False, default="saved")
+    applied_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    status_updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="applications")
+    opportunity = relationship("Opportunity", back_populates="applications")
+    user_job_match = relationship("UserJobMatch", back_populates="application")
+
+
 class DailyTask(Base):
     """Daily application tasks."""
     __tablename__ = "daily_tasks"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    job_id = Column(String, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    job_id = Column(String, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=True)
+    user_job_match_id = Column(String, ForeignKey("user_job_matches.id", ondelete="CASCADE"), nullable=True, index=True)
 
     date = Column(DateTime(timezone=True), server_default=func.now())
     is_completed = Column(Boolean, default=False)
@@ -145,6 +228,7 @@ class DailyTask(Base):
     task_order = Column(Integer, nullable=False, default=0)
 
     job = relationship("Job", back_populates="daily_task")
+    user_job_match = relationship("UserJobMatch", back_populates="daily_tasks")
 
 
 class User(Base):
@@ -167,6 +251,8 @@ class User(Base):
     resumes = relationship("Resume", back_populates="user", cascade="all, delete-orphan")
     job_preferences = relationship("JobPreference", back_populates="user", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
+    user_job_matches = relationship("UserJobMatch", back_populates="user", cascade="all, delete-orphan")
+    applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")
 
 
 class AuthAccount(Base):

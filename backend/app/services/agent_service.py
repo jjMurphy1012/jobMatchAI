@@ -3,19 +3,44 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from typing import TypedDict, List, Optional, Annotated
 from operator import add
-from sqlalchemy import select
-from datetime import datetime
+from sqlalchemy import select, func
+from datetime import datetime, timezone
 import json
 import logging
 
 from app.core.config import settings
 from app.core.database import async_session_maker
-from app.models.models import Resume, JobPreference, Job, DailyTask
+from app.models.models import Resume, JobPreference, Opportunity, UserJobMatch, DailyTask
 from app.services.linkedin_service import LinkedInService
 from app.services.preference_extractor import PreferenceStructuredFields
 from app.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_posted_at(value):
+    """Best-effort parse for external provider timestamps."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(value)
+        except (TypeError, ValueError, OSError):
+            return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        for candidate in (normalized, normalized.replace(" ", "T", 1)):
+            try:
+                return datetime.fromisoformat(candidate)
+            except ValueError:
+                continue
+    return None
 
 
 class AgentState(TypedDict):
@@ -311,44 +336,116 @@ Do not include placeholders like [Your Name] - write it ready to use.
     async def _save_results(self, state: AgentState) -> AgentState:
         """Save matched jobs to database and create daily tasks."""
         matched = state.get("matched_jobs", [])
+        now = datetime.now(timezone.utc)
+        today = now.date()
+        current_match_ids: set[str] = set()
 
         async with async_session_maker() as db:
             for i, job_data in enumerate(matched):
-                # Check if job already exists
-                existing = await db.execute(
-                    select(Job).where(
-                        Job.user_id == self.user_id,
-                        Job.linkedin_job_id == job_data.get("linkedin_job_id"),
+                source_type = job_data.get("source_type") or "legacy"
+                source_job_id = str(
+                    job_data.get("source_job_id")
+                    or job_data.get("linkedin_job_id")
+                    or job_data.get("url")
+                    or f"generated-{i}"
+                )
+
+                opportunity_result = await db.execute(
+                    select(Opportunity).where(
+                        Opportunity.source_type == source_type,
+                        Opportunity.source_job_id == source_job_id,
                     )
                 )
-                if existing.scalar_one_or_none():
-                    continue
+                opportunity = opportunity_result.scalar_one_or_none()
 
-                # Create job record
-                job = Job(
-                    user_id=self.user_id,
-                    title=job_data["title"],
-                    company=job_data["company"],
-                    location=job_data.get("location"),
-                    salary=job_data.get("salary"),
-                    url=job_data.get("url"),
-                    description=job_data.get("description"),
-                    match_score=job_data["match_score"],
-                    match_reason=job_data.get("match_reason"),
-                    matched_skills=job_data.get("matched_skills"),
-                    missing_skills=job_data.get("missing_skills"),
-                    cover_letter=job_data.get("cover_letter"),
-                    linkedin_job_id=job_data.get("linkedin_job_id")
-                )
-                db.add(job)
-                await db.flush()
+                if opportunity is None:
+                    opportunity = Opportunity(
+                        source_type=source_type,
+                        source_job_id=source_job_id,
+                        title=job_data["title"],
+                        company=job_data["company"],
+                        location=job_data.get("location"),
+                        salary=job_data.get("salary"),
+                        url=job_data.get("url"),
+                        description=job_data.get("description"),
+                        raw_payload=job_data.get("raw_payload"),
+                        posted_at=_parse_posted_at(job_data.get("posted_at")),
+                        is_open=True,
+                    )
+                    db.add(opportunity)
+                    await db.flush()
+                else:
+                    opportunity.title = job_data["title"]
+                    opportunity.company = job_data["company"]
+                    opportunity.location = job_data.get("location")
+                    opportunity.salary = job_data.get("salary")
+                    opportunity.url = job_data.get("url")
+                    opportunity.description = job_data.get("description")
+                    opportunity.raw_payload = job_data.get("raw_payload")
+                    opportunity.posted_at = _parse_posted_at(job_data.get("posted_at")) or opportunity.posted_at
+                    opportunity.is_open = True
+                    opportunity.last_seen_at = now
 
-                # Create daily task
-                task = DailyTask(
-                    job_id=job.id,
-                    task_order=i
+                match_result = await db.execute(
+                    select(UserJobMatch).where(
+                        UserJobMatch.user_id == self.user_id,
+                        UserJobMatch.opportunity_id == opportunity.id,
+                    )
                 )
-                db.add(task)
+                user_match = match_result.scalar_one_or_none()
+
+                if user_match is None:
+                    user_match = UserJobMatch(
+                        user_id=self.user_id,
+                        opportunity_id=opportunity.id,
+                        match_score=job_data["match_score"],
+                        match_reason=job_data.get("match_reason"),
+                        matched_skills=job_data.get("matched_skills"),
+                        missing_skills=job_data.get("missing_skills"),
+                        cover_letter=job_data.get("cover_letter"),
+                    )
+                    db.add(user_match)
+                    await db.flush()
+                else:
+                    user_match.match_score = job_data["match_score"]
+                    user_match.match_reason = job_data.get("match_reason")
+                    user_match.matched_skills = job_data.get("matched_skills")
+                    user_match.missing_skills = job_data.get("missing_skills")
+                    user_match.cover_letter = job_data.get("cover_letter")
+                    user_match.last_scored_at = now
+
+                current_match_ids.add(user_match.id)
+
+                existing_task_result = await db.execute(
+                    select(DailyTask).where(
+                        DailyTask.user_job_match_id == user_match.id,
+                        func.date(DailyTask.date) == today,
+                    )
+                )
+                existing_task = existing_task_result.scalar_one_or_none()
+
+                if existing_task is None:
+                    task = DailyTask(
+                        user_job_match_id=user_match.id,
+                        task_order=i,
+                    )
+                    db.add(task)
+                else:
+                    existing_task.task_order = i
+
+            if current_match_ids:
+                stale_tasks_result = await db.execute(
+                    select(DailyTask)
+                    .join(DailyTask.user_job_match)
+                    .where(
+                        UserJobMatch.user_id == self.user_id,
+                        func.date(DailyTask.date) == today,
+                        DailyTask.user_job_match_id.is_not(None),
+                    )
+                )
+                for task in stale_tasks_result.scalars().all():
+                    if task.user_job_match_id not in current_match_ids and not task.is_completed:
+                        await db.delete(task)
 
             await db.commit()
 

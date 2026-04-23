@@ -1,13 +1,22 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import select, delete
+from sqlalchemy import exists, select, delete
 from datetime import datetime, timedelta
 import pytz
 import logging
 
 from app.core.config import settings
 from app.core.database import async_session_maker
-from app.models.models import DailyTask, Job, JobPreference, Resume, User
+from app.models.models import (
+    Application,
+    DailyTask,
+    Job,
+    JobPreference,
+    Opportunity,
+    Resume,
+    User,
+    UserJobMatch,
+)
 from app.services.agent_service import JobMatchingAgent
 
 logger = logging.getLogger(__name__)
@@ -115,6 +124,34 @@ class SchedulerService:
                         Job.searched_at < cutoff_date,
                         Job.is_applied.is_(False),
                         Job.cover_letter.is_(None),
+                    )
+                )
+
+                await db.execute(
+                    delete(UserJobMatch).where(
+                        UserJobMatch.last_scored_at < cutoff_date,
+                        UserJobMatch.cover_letter.is_(None),
+                        ~exists(
+                            select(Application.id).where(
+                                Application.user_job_match_id == UserJobMatch.id
+                            )
+                        ),
+                    )
+                )
+
+                await db.execute(
+                    delete(Opportunity).where(
+                        Opportunity.last_seen_at < cutoff_date,
+                        ~exists(
+                            select(UserJobMatch.id).where(
+                                UserJobMatch.opportunity_id == Opportunity.id
+                            )
+                        ),
+                        ~exists(
+                            select(Application.id).where(
+                                Application.opportunity_id == Opportunity.id
+                            )
+                        ),
                     )
                 )
 
