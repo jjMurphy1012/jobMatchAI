@@ -209,9 +209,9 @@ export default function Preferences() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-white/80 shadow-xl shadow-slate-200/60">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(79,70,229,0.12),_transparent_42%),radial-gradient(circle_at_right,_rgba(14,165,233,0.08),_transparent_35%)]" />
-        <div className="relative grid gap-8 lg:grid-cols-[1.2fr_0.8fr] p-8 lg:p-10">
+      <section className="page-shell overflow-hidden p-8 lg:p-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(26,86,219,0.12),_transparent_40%),radial-gradient(circle_at_right,_rgba(14,159,110,0.08),_transparent_28%)]" />
+        <div className="relative grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-5">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/10 bg-primary/5 px-3 py-1 text-sm font-medium text-primary">
               <Sparkles size={16} />
@@ -227,7 +227,7 @@ export default function Preferences() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white/85 p-4 shadow-inner shadow-slate-100">
+            <div className="rounded-[1.75rem] border border-white/80 bg-white/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
               <textarea
                 value={rawText}
                 onChange={(event) => setRawText(event.target.value)}
@@ -290,7 +290,7 @@ export default function Preferences() {
           </div>
 
           <div className="space-y-4">
-            <Card className="rounded-[24px] border-slate-200 bg-slate-950 text-white shadow-2xl shadow-slate-900/10">
+            <Card className="rounded-[24px] border-white/80 bg-[linear-gradient(180deg,#374151_0%,#2b3445_100%)] text-white shadow-[0_24px_60px_-35px_rgba(15,23,42,0.55)]">
               <CardHeader className="space-y-3">
                 <CardDescription className="text-slate-400">What the system sees</CardDescription>
                 <CardTitle className="text-2xl text-white">Structured profile</CardTitle>
@@ -325,7 +325,7 @@ export default function Preferences() {
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card className="rounded-[28px] border-slate-200 bg-white/80 shadow-lg shadow-slate-200/50">
+        <Card className="border-white/80 bg-white/92">
           <CardHeader>
             <CardDescription>Editable AI interpretation</CardDescription>
             <CardTitle className="text-2xl text-slate-900">Signals extracted from your note</CardTitle>
@@ -423,7 +423,7 @@ export default function Preferences() {
         </Card>
 
         <div className="space-y-6">
-          <Card className="rounded-[28px] border-slate-200 bg-white/80 shadow-lg shadow-slate-200/50">
+          <Card className="border-white/80 bg-white/92">
             <CardHeader>
               <CardDescription>Notifications</CardDescription>
               <CardTitle className="text-2xl text-slate-900">Reminder Email</CardTitle>
@@ -447,7 +447,7 @@ export default function Preferences() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-[28px] border-slate-200 bg-gradient-to-br from-slate-50 to-white shadow-lg shadow-slate-200/40">
+          <Card className="border-white/80 bg-[linear-gradient(180deg,rgba(26,86,219,0.05),rgba(255,255,255,0.98))]">
             <CardHeader>
               <CardDescription>How it works</CardDescription>
               <CardTitle className="text-2xl text-slate-900">Profile loop</CardTitle>
