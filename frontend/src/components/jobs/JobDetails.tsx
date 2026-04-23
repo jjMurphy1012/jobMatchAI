@@ -42,7 +42,7 @@ export function JobDetails({ job }: JobDetailsProps) {
         
         {/* Why You Match Section */}
         {job.match_reason && (
-          <div className="relative bg-indigo-50/50 rounded-xl p-5 border border-indigo-100/50">
+          <div className="relative rounded-[1.4rem] border border-primary/10 bg-primary/5 p-5">
             <div className="flex items-center gap-2 mb-3 text-indigo-900 font-semibold">
               <Sparkles className="w-4 h-4 text-indigo-500" />
               <h4>Why It's a Match</h4>
@@ -107,15 +107,15 @@ export function JobDetails({ job }: JobDetailsProps) {
               <h4 className="font-semibold text-slate-800 text-sm">AI Generated Cover Letter</h4>
               <button
                 onClick={copyToClipboard}
-                className="flex items-center gap-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 transition-colors bg-primary-50 px-3 py-1.5 rounded-lg"
+                className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
                 {copied ? 'Copied!' : 'Copy to Clipboard'}
               </button>
             </div>
             <div className="relative group">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-primary-100 to-indigo-100 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-500"></div>
-              <div className="relative bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+              <div className="absolute -inset-0.5 rounded-[1.5rem] bg-gradient-to-r from-primary/15 to-emerald-200/40 blur opacity-40 transition duration-500 group-hover:opacity-60"></div>
+              <div className="relative rounded-[1.35rem] border border-slate-200 bg-white p-6 shadow-sm">
                 <p className="text-slate-600 text-sm whitespace-pre-wrap leading-relaxed font-mono">
                   {job.cover_letter}
                 </p>

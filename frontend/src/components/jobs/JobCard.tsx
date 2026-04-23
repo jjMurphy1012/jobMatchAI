@@ -24,14 +24,14 @@ export function JobCard({ job, isExpanded, onToggleExpand, children }: JobCardPr
       exit={{ opacity: 0, scale: 0.95 }}
       className={`group relative overflow-hidden rounded-2xl border transition-all duration-300 ${
         isExpanded 
-          ? 'bg-white/80 border-primary-200 shadow-xl shadow-primary-900/5' 
-          : 'bg-white/60 border-white/50 hover:bg-white/90 hover:border-white hover:shadow-lg hover:shadow-indigo-500/10'
+          ? 'bg-white/92 border-primary/20 shadow-[0_22px_50px_-30px_rgba(26,86,219,0.35)]' 
+          : 'bg-white/82 border-white/80 hover:bg-white/96 hover:shadow-[0_18px_45px_-32px_rgba(55,65,81,0.25)]'
       } backdrop-blur-sm`}
     >
       <div className="p-6">
         <div className="flex items-start gap-5">
           {/* Match Score */}
-          <div className={`flex-shrink-0 flex flex-col items-center justify-center w-20 h-20 rounded-2xl ring-1 ${getMatchColor(job.match_score)} transition-colors`}>
+          <div className={`flex-shrink-0 flex flex-col items-center justify-center w-20 h-20 rounded-[1.5rem] ring-1 ${getMatchColor(job.match_score)} transition-colors`}>
             <span className="text-2xl font-bold tracking-tight">{job.match_score}</span>
             <span className="text-[10px] uppercase font-medium tracking-wider opacity-80">Match</span>
           </div>
@@ -45,12 +45,12 @@ export function JobCard({ job, isExpanded, onToggleExpand, children }: JobCardPr
             
             <div className="flex flex-wrap gap-3 mt-3">
               {job.location && (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                   {job.location}
                 </span>
               )}
               {job.salary && (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-100">
+                <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
                   {job.salary}
                 </span>
               )}

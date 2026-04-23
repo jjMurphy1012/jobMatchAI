@@ -1,161 +1,229 @@
-import { useState, useEffect } from 'react'
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileText, Settings, Briefcase, User, Sparkles, Menu, X, Shield, LogOut, BookOpen } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import {
+  Bell,
+  BookOpen,
+  Briefcase,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  Settings,
+  Shield,
+  Sparkles,
+  User,
+} from 'lucide-react'
+
 import { cn } from '../lib/utils'
 import { useAuth } from './auth/AuthProvider'
 
 const navItems = [
-  { path: '/', label: 'Today', icon: LayoutDashboard },
-  { path: '/resume', label: 'Resume', icon: FileText },
-  { path: '/preferences', label: 'Career Profile', icon: Settings },
-  { path: '/matches', label: 'Matches', icon: Briefcase },
-  { path: '/interviews', label: 'Interview Prep', icon: BookOpen },
+  { path: '/', label: 'Today', mobileLabel: 'Today', icon: LayoutDashboard },
+  { path: '/resume', label: 'Resume', mobileLabel: 'Resume', icon: FileText },
+  { path: '/preferences', label: 'Career Profile', mobileLabel: 'Profile', icon: Settings },
+  { path: '/matches', label: 'Matches', mobileLabel: 'Matches', icon: Briefcase },
+  { path: '/interviews', label: 'Interview Prep', mobileLabel: 'Prep', icon: BookOpen },
 ]
 
 export default function Layout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { user, logout } = useAuth()
-  const fullNavItems = user?.role === 'admin'
-    ? [...navItems, { path: '/admin', label: 'Admin Console', icon: Shield }]
-    : navItems
-  const normalizedPath = location.pathname === '/jobs' ? '/matches' : location.pathname
-  const currentPage = fullNavItems.find(item => item.path === normalizedPath)?.label || 'Today'
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [mobileAccountOpen, setMobileAccountOpen] = useState(false)
 
-  // Close sidebar when route changes (mobile)
+  const fullNavItems = useMemo(
+    () =>
+      user?.role === 'admin'
+        ? [...navItems, { path: '/admin', label: 'Admin Console', mobileLabel: 'Admin', icon: Shield }]
+        : navItems,
+    [user?.role]
+  )
+
+  const normalizedPath = location.pathname === '/jobs' ? '/matches' : location.pathname
+  const currentPage = fullNavItems.find((item) => item.path === normalizedPath)?.label || 'Today'
+
   useEffect(() => {
-    setSidebarOpen(false)
+    setMobileAccountOpen(false)
   }, [location.pathname])
 
-  // Close sidebar when clicking outside (mobile)
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth >= 1024) {
-        setSidebarOpen(false)
-      }
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
   return (
-    <div className="min-h-screen font-sans">
-      {/* Mobile Overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar - Dark Glass */}
-      <aside className={cn(
-        "fixed inset-y-0 left-0 z-50 w-72 glass-panel flex flex-col transition-transform duration-300 ease-in-out",
-        "lg:translate-x-0",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
-        {/* Logo */}
-        <div className="h-16 lg:h-20 flex items-center justify-between px-6 lg:px-8 border-b border-white/10">
+    <div className="min-h-screen text-foreground">
+      <aside className="fixed inset-y-4 left-4 z-30 hidden w-[288px] flex-col rounded-[2rem] glass-panel p-4 lg:flex">
+        <div className="rounded-[1.75rem] bg-primary px-5 py-5 text-primary-foreground shadow-[0_20px_45px_-25px_rgba(26,86,219,0.8)]">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 lg:h-10 lg:w-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Sparkles className="text-white w-5 h-5 lg:w-6 lg:h-6" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20">
+              <Sparkles className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="font-bold text-lg lg:text-xl tracking-tight text-white">Job Matcher</h1>
-              <p className="text-xs text-slate-400 font-medium">AI Powered</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-white/70">Career OS</p>
+              <h1 className="text-2xl font-semibold tracking-tight">CareerRise</h1>
             </div>
           </div>
-          {/* Close button for mobile */}
-          <button
-            className="lg:hidden p-2 text-slate-400 hover:text-white"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X size={24} />
-          </button>
+          <p className="mt-5 text-sm leading-6 text-white/78">
+            Keep resume, targeting, matches, and interview prep in one clean workflow.
+          </p>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 lg:px-4 py-6 lg:py-8 space-y-1 lg:space-y-2 overflow-y-auto">
+        <nav className="mt-5 flex-1 space-y-2">
           {fullNavItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-3 px-4 py-3 lg:py-3.5 rounded-xl transition-all duration-200 group relative overflow-hidden",
+                  'group flex items-center gap-3 rounded-[1.35rem] px-4 py-3.5 text-sm font-medium transition-all duration-200',
                   isActive
-                    ? "bg-primary text-white shadow-lg shadow-primary/25 font-medium"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                    ? 'bg-primary text-white shadow-[0_14px_30px_-18px_rgba(26,86,219,0.8)]'
+                    : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
                 )
               }
             >
-              <item.icon size={20} className={cn("transition-colors", "opacity-80")} />
-              <span className="text-sm lg:text-base">{item.label}</span>
+              <item.icon className="h-5 w-5" />
+              <span>{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
-        {/* User Profile */}
-        <div className="p-3 lg:p-4 border-t border-white/10 bg-black/20">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 w-full p-2 rounded-xl">
-              <div className="h-9 w-9 lg:h-10 lg:w-10 rounded-full bg-gradient-to-tr from-indigo-400 to-rose-400 p-[2px] flex-shrink-0">
-                <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center overflow-hidden">
-                  {user?.avatar_url ? (
-                    <img src={user.avatar_url} alt={user.name || user.email} className="h-full w-full object-cover" />
-                  ) : (
-                    <User size={16} className="text-indigo-200 lg:w-[18px] lg:h-[18px]" />
-                  )}
-                </div>
-              </div>
-              <div className="flex flex-col items-start overflow-hidden">
-                <span className="text-sm font-medium text-white truncate w-full">
-                  {user?.name || 'User Profile'}
-                </span>
-                <span className="text-xs text-slate-400 truncate w-full">{user?.email}</span>
-              </div>
+        <div className="mt-4 rounded-[1.6rem] border border-white/80 bg-white/88 p-4 shadow-[0_20px_45px_-30px_rgba(55,65,81,0.25)]">
+          <div className="flex items-center gap-3">
+            <button
+              className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100"
+              onClick={() => navigate('/resume')}
+              title="Open account area"
+            >
+              {user?.avatar_url ? (
+                <img src={user.avatar_url} alt={user.name || user.email} className="h-full w-full object-cover" />
+              ) : (
+                <User className="h-5 w-5 text-slate-500" />
+              )}
+            </button>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{user?.name || 'CareerRise User'}</p>
+              <p className="truncate text-xs text-slate-500">{user?.email}</p>
             </div>
-            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">{user?.role}</span>
-              <button
-                className="inline-flex items-center gap-2 text-xs font-medium text-slate-200 hover:text-white"
-                onClick={logout}
-              >
-                <LogOut size={14} />
-                Sign Out
-              </button>
-            </div>
+          </div>
+          <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-100/90 px-3 py-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">{user?.role}</span>
+            <button
+              className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 transition-colors hover:text-slate-950"
+              onClick={logout}
+            >
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </button>
           </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="lg:ml-72 flex flex-col min-h-screen transition-all duration-300">
-        {/* Header */}
-        <header className="h-14 lg:h-20 px-4 lg:px-8 flex items-center justify-between sticky top-0 z-20 bg-background/80 backdrop-blur-md border-b border-slate-200/50">
-          <div className="flex items-center gap-3">
-            {/* Mobile menu button */}
+      <div className="min-h-screen lg:ml-[320px]">
+        <header className="sticky top-0 z-20 border-b border-white/70 bg-background/88 backdrop-blur-xl">
+          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:hidden">
             <button
-              className="lg:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
-              onClick={() => setSidebarOpen(true)}
+              className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/80 bg-white/90 shadow-sm"
+              onClick={() => setMobileAccountOpen((current) => !current)}
+              title="Open account menu"
             >
-              <Menu size={24} />
+              {user?.avatar_url ? (
+                <img src={user.avatar_url} alt={user.name || user.email} className="h-full w-full object-cover" />
+              ) : (
+                <User className="h-5 w-5 text-slate-500" />
+              )}
             </button>
-            <h2 className="text-lg lg:text-xl font-bold text-slate-800">{currentPage}</h2>
+
+            <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-white shadow-[0_10px_22px_-16px_rgba(26,86,219,0.9)]">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <span className="text-[1.85rem] font-semibold tracking-tight text-primary">CareerRise</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {user?.role === 'admin' ? (
+                <button
+                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/80 bg-white/90 shadow-sm"
+                  onClick={() => navigate('/admin')}
+                  title="Open admin console"
+                >
+                  <Shield className="h-5 w-5 text-primary" />
+                </button>
+              ) : (
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/80 bg-white/90 shadow-sm">
+                  <Bell className="h-5 w-5 text-slate-500" />
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2 lg:gap-4">
-             <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></div>
-             <span className="text-xs lg:text-sm font-medium text-slate-500 hidden sm:inline">System Online</span>
+
+          {mobileAccountOpen && (
+            <div className="border-t border-white/70 bg-white/92 px-4 pb-4 pt-3 shadow-[0_18px_40px_-32px_rgba(55,65,81,0.3)] lg:hidden">
+              <div className="rounded-[1.5rem] border border-slate-200/80 bg-white px-4 py-4 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">{user?.name || 'CareerRise User'}</p>
+                <p className="mt-1 text-sm text-slate-500">{user?.email}</p>
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                    {user?.role}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {user?.role === 'admin' && (
+                      <button
+                        className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                        onClick={() => navigate('/admin')}
+                      >
+                        Admin
+                      </button>
+                    )}
+                    <button
+                      className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
+                      onClick={logout}
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="mx-auto hidden h-20 max-w-7xl items-center justify-between px-8 lg:flex">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Workspace</p>
+              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{currentPage}</h2>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/90 px-4 py-2 text-sm font-medium text-slate-600 shadow-sm">
+              <span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--brand-success))]" />
+              System Online
+            </div>
           </div>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto animate-fade-in">
+        <main className="bottom-nav-safe px-4 py-6 sm:px-6 lg:px-8 lg:py-8 lg:pb-8">
+          <div className="mx-auto max-w-7xl animate-fade-in">
             <Outlet />
           </div>
         </main>
       </div>
+
+      <nav className="fixed inset-x-3 bottom-3 z-30 lg:hidden">
+        <div className="mx-auto max-w-xl rounded-[1.9rem] border border-white/80 bg-white/95 px-2 pt-2 shadow-[0_22px_55px_-28px_rgba(55,65,81,0.35)] backdrop-blur-xl">
+          <div className="grid grid-cols-5 gap-1">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                className={({ isActive }) =>
+                  cn(
+                    'flex min-h-[68px] flex-col items-center justify-center gap-1 rounded-[1.35rem] px-1 pb-[calc(0.45rem+env(safe-area-inset-bottom))] pt-2 text-[11px] font-medium transition-all duration-200',
+                    isActive ? 'bg-primary text-white shadow-[0_12px_24px_-18px_rgba(26,86,219,0.9)]' : 'text-slate-500'
+                  )
+                }
+              >
+                <item.icon className="h-[18px] w-[18px]" />
+                <span>{item.mobileLabel}</span>
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      </nav>
     </div>
   )
 }

@@ -81,19 +81,24 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-600">Today</p>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Keep your search loop moving</h1>
-          <p className="mt-2 max-w-2xl text-slate-600">
-            Resume and Career Profile are your setup steps. Matches only appear after you manually run a new search from the Matches page.
-          </p>
+      <section className="page-shell overflow-hidden p-8 sm:p-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(26,86,219,0.12),_transparent_36%),radial-gradient(circle_at_right,_rgba(14,159,110,0.07),_transparent_28%)]" />
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">Today</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+              Welcome back
+            </h1>
+            <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
+              Resume and Career Profile are your setup steps. Matches only appear after you manually run a new search from the Matches page.
+            </p>
+          </div>
+          <Button className="gap-2" size="lg" onClick={() => navigate('/matches')}>
+            <Search className="h-4 w-4" />
+            Open Matches
+          </Button>
         </div>
-        <Button className="gap-2" onClick={() => navigate('/matches')}>
-          <Search className="h-4 w-4" />
-          Go to Matches
-        </Button>
-      </div>
+      </section>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className={cn("border-slate-200/80", hasResume && "border-emerald-200 bg-emerald-50/40")}>

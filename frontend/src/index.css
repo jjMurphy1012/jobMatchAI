@@ -9,37 +9,40 @@
 
 @layer base {
   :root {
-    /* Base Colors - Slate */
-    --background: 220 30% 96%; /* #f1f5f9 - Light Slate */
-    --foreground: 222.2 84% 4.9%;
+    --background: 224 67% 96%;
+    --foreground: 221 39% 11%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 222 100% 99%;
+    --card-foreground: 221 39% 11%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 222 100% 99%;
+    --popover-foreground: 221 39% 11%;
 
-    /* Primary - Indigo/Violet */
-    --primary: 243 75% 59%; /* #4f46e5 - Indigo 600 */
+    --primary: 220 79% 48%;
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 223 72% 95%;
+    --secondary-foreground: 221 39% 20%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 220 20% 92%;
+    --muted-foreground: 220 13% 35%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 220 64% 96%;
+    --accent-foreground: 221 39% 20%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 243 75% 59%;;
+    --border: 221 36% 86%;
+    --input: 221 36% 86%;
+    --ring: 220 79% 48%;
 
-    --radius: 0.75rem; /* 12px for softer look */
+    --radius: 1rem;
+
+    --brand-primary: 220 79% 48%;
+    --brand-success: 158 84% 34%;
+    --brand-tertiary: 220 13% 92%;
+    --brand-neutral: 220 16% 28%;
   }
 
   .dark {
@@ -79,37 +82,49 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    background-image: 
-        radial-gradient(at 0% 0%, hsla(243, 75%, 95%, 1) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, hsla(210, 80%, 95%, 1) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, hsla(243, 75%, 95%, 1) 0px, transparent 50%);
+    background-image:
+      radial-gradient(circle at top left, hsla(220, 79%, 92%, 0.9), transparent 34%),
+      radial-gradient(circle at top right, hsla(158, 84%, 92%, 0.55), transparent 28%),
+      linear-gradient(180deg, #eef3ff 0%, #f8faff 42%, #f3f7ff 100%);
     background-attachment: fixed;
   }
 }
 
 @layer utilities {
   .glass-card {
-    @apply bg-white/70 backdrop-blur-md border border-white/40 shadow-xl shadow-indigo-100/50 rounded-2xl;
+    @apply bg-white/90 backdrop-blur-md border border-white/70 shadow-[0_18px_45px_-28px_rgba(26,86,219,0.35)] rounded-[1.75rem];
   }
   
   .glass-panel {
-    @apply bg-slate-900/90 backdrop-blur-lg border-r border-slate-700/50 text-white shadow-2xl;
+    @apply bg-white/90 backdrop-blur-lg border border-white/70 text-slate-900 shadow-[0_20px_50px_-32px_rgba(55,65,81,0.35)];
   }
   
   .btn-primary {
-    @apply inline-flex items-center justify-center whitespace-nowrap rounded-xl text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow-lg shadow-indigo-500/20 hover:bg-primary/90 hover:shadow-indigo-500/30 active:scale-95 h-10 px-6 py-2;
+    @apply inline-flex items-center justify-center whitespace-nowrap rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow-[0_12px_30px_-18px_rgba(26,86,219,0.8)] hover:bg-primary/95 active:scale-[0.98] h-11 px-6 py-2.5;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center whitespace-nowrap rounded-xl text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-slate-300 active:scale-95 h-10 px-6 py-2;
+    @apply inline-flex items-center justify-center whitespace-nowrap rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-white/90 text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 active:scale-[0.98] h-11 px-6 py-2.5;
   }
 
   .card {
-    @apply glass-card p-6 transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-100/60 hover:-translate-y-1;
+    @apply glass-card p-6 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_55px_-30px_rgba(26,86,219,0.4)];
   }
 
   .input {
-    @apply flex h-10 w-full rounded-xl border border-input bg-white/50 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply flex h-11 w-full rounded-2xl border border-input bg-white/90 px-4 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .page-shell {
+    @apply relative rounded-[2rem] border border-white/70 bg-white/60 shadow-[0_18px_55px_-34px_rgba(26,86,219,0.35)] backdrop-blur-xl;
+  }
+
+  .surface-soft {
+    @apply border border-slate-200/80 bg-white/90 shadow-[0_18px_45px_-30px_rgba(55,65,81,0.18)];
+  }
+
+  .bottom-nav-safe {
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
   }
 
   /* Animation for fade in */
@@ -132,10 +147,10 @@
 /* Mobile responsive adjustments */
 @media (max-width: 1023px) {
   .glass-card {
-    @apply rounded-xl;
+    @apply rounded-[1.5rem];
   }
 
   .card {
-    @apply p-4;
+    @apply p-5;
   }
 }
