@@ -3,26 +3,19 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { LockKeyhole, Mail } from 'lucide-react'
 import { useAuth } from '../components/auth/AuthProvider'
 import { authApi } from '../api/client'
-import { AuthBrand, AuthDivider, AuthField, DesktopAuthPanel, GoogleMark } from '../components/auth/AuthPrimitives'
+import {
+  AuthBrand,
+  AuthDivider,
+  AuthField,
+  AuthInlineAlert,
+  DesktopAuthPanel,
+  GoogleAuthButton,
+} from '../components/auth/AuthPrimitives'
 import { Button } from '../components/ui/button'
 
 const errorMessages: Record<string, string> = {
   oauth_state_mismatch: 'Google sign-in could not be verified. Please try again.',
   google_exchange_failed: 'Google sign-in failed during token exchange. Check the backend OAuth configuration.',
-}
-
-function InlineAlert({ tone = 'neutral', message }: { tone?: 'neutral' | 'error'; message: string }) {
-  return (
-    <div
-      className={
-        tone === 'error'
-          ? 'rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700'
-          : 'rounded-[18px] border border-[#d7e2ff] bg-[#eef4ff] px-4 py-3 text-sm text-[#2455d6]'
-      }
-    >
-      {message}
-    </div>
-  )
 }
 
 export default function Login() {
@@ -81,19 +74,14 @@ export default function Login() {
               </div>
 
               <div className="mt-7 space-y-4">
-                {errorCode && <InlineAlert tone="error" message={errorMessages[errorCode] || decodeURIComponent(errorCode)} />}
-                {notice && <InlineAlert message={notice} />}
+                {errorCode && <AuthInlineAlert tone="error" message={errorMessages[errorCode] || decodeURIComponent(errorCode)} />}
+                {notice && <AuthInlineAlert message={notice} />}
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-[70px] w-full rounded-[18px] border-[#cfd6e7] text-[1rem] font-semibold text-[#0a1630] shadow-none hover:bg-[#f7f9ff]"
+                <GoogleAuthButton
+                  label="Sign in with Google"
                   onClick={loginWithGoogle}
                   disabled={isSubmitting}
-                >
-                  <GoogleMark />
-                  <span className="ml-3">Sign in with Google</span>
-                </Button>
+                />
 
                 <AuthDivider label="OR" />
 
@@ -116,17 +104,6 @@ export default function Login() {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     autoComplete="current-password"
-                    trailing={
-                      <button
-                        type="button"
-                        className="text-[0.95rem] font-medium text-[#1149d8] transition hover:text-[#0b3da9]"
-                        onClick={() =>
-                          setNotice('Password reset is not enabled yet. Use your existing password or Google sign-in.')
-                        }
-                      >
-                        Forgot Password?
-                      </button>
-                    }
                   />
 
                   <Button

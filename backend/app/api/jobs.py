@@ -11,13 +11,12 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.core.enums import APPLIED_STATUSES, ApplicationStatus
 from app.models.models import Application, JobPreference, Resume, User, UserJobMatch
 from app.services.agent_service import JobMatchingAgent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-APPLIED_STATUSES = {"applying", "applied", "interviewing", "offer"}
 
 
 class JobResponse(BaseModel):
@@ -151,14 +150,13 @@ async def refresh_jobs(
     current_user: User = Depends(get_current_user),
 ):
     """Run a job search synchronously for the current user."""
-    resume_result = await db.execute(select(Resume).where(Resume.user_id == current_user.id).limit(1))
-    resume = resume_result.scalar_one_or_none()
-    if not resume:
+    resume_res, pref_res = await asyncio.gather(
+        db.execute(select(Resume.id).where(Resume.user_id == current_user.id).limit(1)),
+        db.execute(select(JobPreference.id).where(JobPreference.user_id == current_user.id).limit(1)),
+    )
+    if resume_res.scalar_one_or_none() is None:
         raise HTTPException(status_code=400, detail="Please upload a resume first")
-
-    pref_result = await db.execute(select(JobPreference).where(JobPreference.user_id == current_user.id).limit(1))
-    preferences = pref_result.scalar_one_or_none()
-    if not preferences:
+    if pref_res.scalar_one_or_none() is None:
         raise HTTPException(status_code=400, detail="Please set job preferences first")
 
     result = await run_job_search(current_user.id)
@@ -210,13 +208,13 @@ async def mark_job_applied(
                 user_id=current_user.id,
                 opportunity_id=user_match.opportunity_id,
                 user_job_match_id=user_match.id,
-                status="applied",
+                status=ApplicationStatus.APPLIED,
                 applied_at=now,
                 status_updated_at=now,
             )
         )
     else:
-        user_match.application.status = "applied"
+        user_match.application.status = ApplicationStatus.APPLIED
         user_match.application.applied_at = now
         user_match.application.status_updated_at = now
 

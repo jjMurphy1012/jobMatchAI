@@ -5,6 +5,7 @@ from typing import TypedDict, List, Optional, Annotated
 from operator import add
 from sqlalchemy import select, func
 from datetime import datetime, timezone
+import asyncio
 import json
 import logging
 
@@ -174,23 +175,25 @@ class JobMatchingAgent:
 
         resume = state["resume_text"]
         profile_text = state.get("preferences", {}).get("profile_text", "")
+
+        results = await asyncio.gather(
+            *(self._score_job(resume, profile_text, job) for job in raw_jobs),
+            return_exceptions=True,
+        )
+
         scored_jobs = []
-
-        for job in state["raw_jobs"]:
-            try:
-                score_data = await self._score_job(resume, profile_text, job)
-                scored_jobs.append({
-                    **job,
-                    "match_score": score_data.get("score", 0),
-                    "match_reason": score_data.get("reason", ""),
-                    "matched_skills": json.dumps(score_data.get("matched_skills", [])),
-                    "missing_skills": json.dumps(score_data.get("missing_skills", []))
-                })
-            except Exception as e:
-                logger.error(f"Error scoring job {job.get('title')}: {e}")
+        for job, score_data in zip(raw_jobs, results):
+            if isinstance(score_data, Exception):
+                logger.error("Error scoring job %s: %s", job.get("title"), score_data)
                 continue
+            scored_jobs.append({
+                **job,
+                "match_score": score_data.get("score", 0),
+                "match_reason": score_data.get("reason", ""),
+                "matched_skills": json.dumps(score_data.get("matched_skills", [])),
+                "missing_skills": json.dumps(score_data.get("missing_skills", [])),
+            })
 
-        # Sort by score
         scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
         return {**state, "scored_jobs": scored_jobs}
 
@@ -292,13 +295,16 @@ JSON only, no markdown:
         matched = state.get("matched_jobs", [])[:settings.TARGET_JOBS]
         resume = state["resume_text"]
 
-        for job in matched:
-            try:
-                cover_letter = await self._generate_cover_letter(resume, job)
-                job["cover_letter"] = cover_letter
-            except Exception as e:
-                logger.error(f"Error generating cover letter: {e}")
+        results = await asyncio.gather(
+            *(self._generate_cover_letter(resume, job) for job in matched),
+            return_exceptions=True,
+        )
+        for job, result in zip(matched, results):
+            if isinstance(result, Exception):
+                logger.error("Error generating cover letter: %s", result)
                 job["cover_letter"] = ""
+            else:
+                job["cover_letter"] = result
 
         return {**state, "matched_jobs": matched}
 

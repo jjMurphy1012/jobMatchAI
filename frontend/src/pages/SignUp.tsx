@@ -3,16 +3,15 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, LockKeyhole, Mail, User2 } from 'lucide-react'
 import { useAuth } from '../components/auth/AuthProvider'
 import { authApi } from '../api/client'
-import { AuthBrand, AuthDivider, AuthField, DesktopAuthPanel, GoogleMark } from '../components/auth/AuthPrimitives'
+import {
+  AuthBrand,
+  AuthDivider,
+  AuthField,
+  AuthInlineAlert,
+  DesktopAuthPanel,
+  GoogleAuthButton,
+} from '../components/auth/AuthPrimitives'
 import { Button } from '../components/ui/button'
-
-function InlineAlert({ message }: { message: string }) {
-  return (
-    <div className="rounded-[18px] border border-[#d7e2ff] bg-[#eef4ff] px-4 py-3 text-sm text-[#2455d6]">
-      {message}
-    </div>
-  )
-}
 
 function SignUpForm({
   onGoogleLogin,
@@ -49,18 +48,13 @@ function SignUpForm({
 
   return (
     <div className="space-y-6">
-      {notice && <InlineAlert message={notice} />}
+      {notice && <AuthInlineAlert tone="error" message={notice} />}
 
-      <Button
-        type="button"
-        variant="outline"
-        className="h-[70px] w-full rounded-[18px] border-[#cfd6e7] text-[1rem] font-semibold text-[#0a1630] shadow-none hover:bg-[#f7f9ff]"
+      <GoogleAuthButton
+        label="Sign up with Google"
         onClick={onGoogleLogin}
         disabled={isSubmitting}
-      >
-        <GoogleMark />
-        <span className="ml-3">Sign up with Google</span>
-      </Button>
+      />
 
       <AuthDivider label="OR REGISTER WITH EMAIL" />
 

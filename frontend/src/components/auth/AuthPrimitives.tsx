@@ -1,8 +1,47 @@
 import type { InputHTMLAttributes, ReactNode } from 'react'
 import { ArrowRight, Briefcase, CheckCircle2, LineChart, type LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { Button } from '../ui/button'
 
 type AuthMode = 'login' | 'signup'
+type AlertTone = 'neutral' | 'error'
+
+export function AuthInlineAlert({ tone = 'neutral', message }: { tone?: AlertTone; message: string }) {
+  return (
+    <div
+      className={
+        tone === 'error'
+          ? 'rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700'
+          : 'rounded-[18px] border border-[#d7e2ff] bg-[#eef4ff] px-4 py-3 text-sm text-[#2455d6]'
+      }
+    >
+      {message}
+    </div>
+  )
+}
+
+export function GoogleAuthButton({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className="h-[70px] w-full rounded-[18px] border-[#cfd6e7] text-[1rem] font-semibold text-[#0a1630] shadow-none hover:bg-[#f7f9ff]"
+      onClick={onClick}
+      disabled={disabled}
+    >
+      <GoogleMark />
+      <span className="ml-3">{label}</span>
+    </Button>
+  )
+}
 
 export function AuthBrand({
   centered = false,

@@ -12,13 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import CurrentUserResponse
 from app.api.deps import require_admin
 from app.core.database import get_db
+from app.core.enums import REVIEW_STATUSES, ReviewStatus, USER_ROLES, UserRole
+from app.core.text import normalize_company
 from app.models.models import InterviewExperience, User
 
 router = APIRouter()
-
-
-def _normalize_company(value: str) -> str:
-    return " ".join(value.strip().lower().split())
 
 
 class AdminUserResponse(CurrentUserResponse):
@@ -63,31 +61,31 @@ class InterviewExperienceUpsertRequest(BaseModel):
     summary: str = Field(min_length=20)
     source_url: Optional[str] = None
     source_site: Optional[str] = Field(default=None, max_length=120)
-    review_status: str = Field(default="draft")
+    review_status: str = Field(default=ReviewStatus.DRAFT)
     relevance_keywords: list[str] = Field(default_factory=list)
 
 
-def _serialize_experience(experience: InterviewExperience) -> AdminInterviewExperienceResponse:
-    return AdminInterviewExperienceResponse(
-        id=experience.id,
-        company_name=experience.company_name,
-        company_name_normalized=experience.company_name_normalized,
-        role=experience.role,
-        level=experience.level,
-        year=experience.year,
-        rounds=experience.rounds,
-        topics=list(experience.topics or []),
-        summary=experience.summary,
-        source_url=experience.source_url,
-        source_site=experience.source_site,
-        review_status=experience.review_status,
-        relevance_keywords=list(experience.relevance_keywords or []),
-        created_by_user_id=experience.created_by_user_id,
-        reviewed_by_user_id=experience.reviewed_by_user_id,
-        reviewed_at=experience.reviewed_at,
-        created_at=experience.created_at,
-        updated_at=experience.updated_at,
-    )
+def _apply_experience_payload(
+    experience: InterviewExperience,
+    payload: InterviewExperienceUpsertRequest,
+    admin: User,
+) -> None:
+    """Populate InterviewExperience columns from an upsert payload. Shared by create + update."""
+    experience.company_name = payload.company_name.strip()
+    experience.company_name_normalized = normalize_company(payload.company_name)
+    experience.role = payload.role.strip()
+    experience.level = payload.level.strip() if payload.level else None
+    experience.year = payload.year
+    experience.rounds = payload.rounds.strip() if payload.rounds else None
+    experience.topics = [topic.strip() for topic in payload.topics if topic.strip()]
+    experience.summary = payload.summary.strip()
+    experience.source_url = payload.source_url
+    experience.source_site = payload.source_site.strip() if payload.source_site else None
+    experience.review_status = payload.review_status
+    experience.relevance_keywords = [kw.strip() for kw in payload.relevance_keywords if kw.strip()]
+    is_published = payload.review_status == ReviewStatus.PUBLISHED
+    experience.reviewed_by_user_id = admin.id if is_published else None
+    experience.reviewed_at = datetime.now(timezone.utc) if is_published else None
 
 
 @router.get("/users", response_model=list[AdminUserResponse])
@@ -106,7 +104,7 @@ async def update_user_role(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(require_admin),
 ):
-    if payload.role not in {"admin", "user"}:
+    if payload.role not in USER_ROLES:
         raise HTTPException(status_code=400, detail="Role must be 'admin' or 'user'.")
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -114,7 +112,7 @@ async def update_user_role(
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    if user.id == current_admin.id and payload.role != "admin":
+    if user.id == current_admin.id and payload.role != UserRole.ADMIN:
         raise HTTPException(status_code=400, detail="You cannot remove your own admin role.")
 
     user.role = payload.role
@@ -131,7 +129,10 @@ async def list_interview_experiences(
         select(InterviewExperience)
         .order_by(InterviewExperience.updated_at.desc(), InterviewExperience.created_at.desc())
     )
-    return [_serialize_experience(experience) for experience in result.scalars().all()]
+    return [
+        AdminInterviewExperienceResponse.model_validate(experience)
+        for experience in result.scalars().all()
+    ]
 
 
 @router.post(
@@ -144,31 +145,14 @@ async def create_interview_experience(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(require_admin),
 ):
-    if payload.review_status not in {"draft", "published"}:
+    if payload.review_status not in REVIEW_STATUSES:
         raise HTTPException(status_code=400, detail="review_status must be 'draft' or 'published'.")
 
-    now = datetime.now(timezone.utc)
-    experience = InterviewExperience(
-        id=str(uuid4()),
-        company_name=payload.company_name.strip(),
-        company_name_normalized=_normalize_company(payload.company_name),
-        role=payload.role.strip(),
-        level=payload.level.strip() if payload.level else None,
-        year=payload.year,
-        rounds=payload.rounds.strip() if payload.rounds else None,
-        topics=[topic.strip() for topic in payload.topics if topic.strip()],
-        summary=payload.summary.strip(),
-        source_url=payload.source_url,
-        source_site=payload.source_site.strip() if payload.source_site else None,
-        review_status=payload.review_status,
-        relevance_keywords=[keyword.strip() for keyword in payload.relevance_keywords if keyword.strip()],
-        created_by_user_id=current_admin.id,
-        reviewed_by_user_id=current_admin.id if payload.review_status == "published" else None,
-        reviewed_at=now if payload.review_status == "published" else None,
-    )
+    experience = InterviewExperience(id=str(uuid4()), created_by_user_id=current_admin.id)
+    _apply_experience_payload(experience, payload, current_admin)
     db.add(experience)
     await db.flush()
-    return _serialize_experience(experience)
+    return AdminInterviewExperienceResponse.model_validate(experience)
 
 
 @router.patch("/interview-experiences/{experience_id}", response_model=AdminInterviewExperienceResponse)
@@ -178,7 +162,7 @@ async def update_interview_experience(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(require_admin),
 ):
-    if payload.review_status not in {"draft", "published"}:
+    if payload.review_status not in REVIEW_STATUSES:
         raise HTTPException(status_code=400, detail="review_status must be 'draft' or 'published'.")
 
     result = await db.execute(select(InterviewExperience).where(InterviewExperience.id == experience_id))
@@ -186,22 +170,9 @@ async def update_interview_experience(
     if not experience:
         raise HTTPException(status_code=404, detail="Interview experience not found.")
 
-    experience.company_name = payload.company_name.strip()
-    experience.company_name_normalized = _normalize_company(payload.company_name)
-    experience.role = payload.role.strip()
-    experience.level = payload.level.strip() if payload.level else None
-    experience.year = payload.year
-    experience.rounds = payload.rounds.strip() if payload.rounds else None
-    experience.topics = [topic.strip() for topic in payload.topics if topic.strip()]
-    experience.summary = payload.summary.strip()
-    experience.source_url = payload.source_url
-    experience.source_site = payload.source_site.strip() if payload.source_site else None
-    experience.review_status = payload.review_status
-    experience.relevance_keywords = [keyword.strip() for keyword in payload.relevance_keywords if keyword.strip()]
-    experience.reviewed_by_user_id = current_admin.id if payload.review_status == "published" else None
-    experience.reviewed_at = datetime.now(timezone.utc) if payload.review_status == "published" else None
+    _apply_experience_payload(experience, payload, current_admin)
     await db.flush()
-    return _serialize_experience(experience)
+    return AdminInterviewExperienceResponse.model_validate(experience)
 
 
 @router.delete("/interview-experiences/{experience_id}")

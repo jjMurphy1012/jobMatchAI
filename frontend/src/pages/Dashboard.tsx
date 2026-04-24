@@ -13,16 +13,17 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [tasks, setTasks] = useState<DailyTask[]>([])
   const [stats, setStats] = useState<TaskStatsResponse | null>(null)
-  const [allCompleted, setAllCompleted] = useState(false)
   const [loading, setLoading] = useState(true)
   const [hasResume, setHasResume] = useState(false)
   const [hasProfile, setHasProfile] = useState(false)
 
+  const allCompleted = Boolean(stats?.all_completed)
+
   useEffect(() => {
-    loadData()
+    loadInitial()
   }, [])
 
-  async function loadData() {
+  async function loadInitial() {
     setLoading(true)
     const [tasksRes, statsRes, resumeRes, profileRes] = await Promise.all([
       tasksApi.list(),
@@ -31,28 +32,24 @@ export default function Dashboard() {
       preferencesApi.get(),
     ])
 
-    if (tasksRes.data) {
-      setTasks(tasksRes.data.tasks)
-      setAllCompleted(tasksRes.data.all_completed)
-    }
-    if (statsRes.data) {
-      setStats(statsRes.data)
-    }
+    if (tasksRes.data) setTasks(tasksRes.data.tasks)
+    if (statsRes.data) setStats(statsRes.data)
     setHasResume(Boolean(resumeRes.data))
     setHasProfile(Boolean(profileRes.data?.raw_text || profileRes.data?.effective_fields?.keywords?.length))
     setLoading(false)
   }
 
+  async function refreshTasks() {
+    const [tasksRes, statsRes] = await Promise.all([tasksApi.list(), tasksApi.stats()])
+    if (tasksRes.data) setTasks(tasksRes.data.tasks)
+    if (statsRes.data) setStats(statsRes.data)
+  }
+
   async function toggleTask(taskId: string, isCompleted: boolean) {
     const api = isCompleted ? tasksApi.uncomplete : tasksApi.complete
     const result = await api(taskId)
-
     if (result.data) {
-      loadData()
-      const data = result.data as any
-      if (data.all_completed) {
-        setAllCompleted(true)
-      }
+      await refreshTasks()
     }
   }
 

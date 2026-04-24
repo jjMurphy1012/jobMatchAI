@@ -1,7 +1,7 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import exists, select, delete
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 import logging
 
@@ -109,7 +109,7 @@ class SchedulerService:
         """
         logger.info("Starting daily cleanup...")
 
-        cutoff_date = datetime.now(eastern) - timedelta(days=settings.DATA_RETENTION_DAYS)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=settings.DATA_RETENTION_DAYS)
 
         try:
             async with async_session_maker() as db:

@@ -11,6 +11,7 @@ from app.api import preferences as preferences_api
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import rate_limiter
 from app.models.models import JobPreference, Resume, User
 from app.services.preference_extractor import (
     PreferenceAnalysisResult,
@@ -60,9 +61,9 @@ def build_app(*routers) -> FastAPI:
 
 @pytest.fixture(autouse=True)
 def reset_auth_rate_limiter():
-    auth_api.auth_rate_limiter.reset()
+    rate_limiter.reset()
     yield
-    auth_api.auth_rate_limiter.reset()
+    rate_limiter.reset()
 
 
 def test_google_login_sets_state_cookie_and_redirects(monkeypatch):

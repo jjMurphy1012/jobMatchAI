@@ -10,14 +10,12 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.core.enums import ReviewStatus
+from app.core.text import normalize_company
 from app.models.models import InterviewExperience, JobPreference, User, UserJobMatch
 from app.services.preference_extractor import PreferenceStructuredFields
 
 router = APIRouter()
-
-
-def _normalize_company(value: str | None) -> str:
-    return " ".join((value or "").strip().lower().split())
 
 
 def _tokenize_text(*parts: object) -> set[str]:
@@ -78,7 +76,7 @@ async def list_relevant_interview_experiences(
     )
     matches = match_result.scalars().all()
     preferred_companies = {
-        _normalize_company(match.opportunity.company)
+        normalize_company(match.opportunity.company)
         for match in matches
         if match.opportunity and match.opportunity.company
     }
@@ -87,10 +85,13 @@ async def list_relevant_interview_experiences(
     if preference and preference.raw_text:
         keyword_tokens.update(_tokenize_text(preference.raw_text))
 
+    # Hard cap keeps the Python-side ranking pass bounded; swap to FTS/relevance_index
+    # when the curated set outgrows this.
     result = await db.execute(
         select(InterviewExperience)
-        .where(InterviewExperience.review_status == "published")
+        .where(InterviewExperience.review_status == ReviewStatus.PUBLISHED)
         .order_by(InterviewExperience.updated_at.desc(), InterviewExperience.created_at.desc())
+        .limit(500)
     )
     experiences = result.scalars().all()
 
@@ -103,7 +104,6 @@ async def list_relevant_interview_experiences(
             experience.role,
             experience.level,
             experience.rounds,
-            experience.summary,
             experience.topics or [],
             experience.relevance_keywords or [],
         )

@@ -9,13 +9,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.rate_limit import InMemoryRateLimiter
+from app.core.rate_limit import rate_limiter
 from app.core.security import generate_refresh_token
 from app.models.models import User
 from app.services.auth_service import auth_service
 
 router = APIRouter()
-auth_rate_limiter = InMemoryRateLimiter()
+
+
+def _enforce_auth_rate_limit(request: Request, bucket: str) -> None:
+    rate_limiter.enforce(
+        request=request,
+        bucket=bucket,
+        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
 
 
 class CurrentUserResponse(BaseModel):
@@ -50,12 +58,7 @@ def _frontend_error_redirect(error_code: str) -> str:
 
 @router.get("/google/login")
 async def start_google_login(request: Request):
-    auth_rate_limiter.enforce(
-        request=request,
-        bucket="google_login",
-        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
-    )
+    _enforce_auth_rate_limit(request, "google_login")
     state = generate_refresh_token()
     response = RedirectResponse(auth_service.build_google_login_url(state), status_code=status.HTTP_302_FOUND)
     response.set_cookie(
@@ -79,12 +82,7 @@ async def complete_google_login(
     stored_state: str | None = Cookie(default=None, alias=settings.OAUTH_STATE_COOKIE_NAME),
     db: AsyncSession = Depends(get_db),
 ):
-    auth_rate_limiter.enforce(
-        request=request,
-        bucket="google_callback",
-        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
-    )
+    _enforce_auth_rate_limit(request, "google_callback")
     if not code or not state or not stored_state or stored_state != state:
         response = RedirectResponse(_frontend_error_redirect("oauth_state_mismatch"), status_code=status.HTTP_302_FOUND)
         auth_service.clear_auth_cookies(response)
@@ -118,12 +116,7 @@ async def register_with_email(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    auth_rate_limiter.enforce(
-        request=request,
-        bucket="email_register",
-        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
-    )
+    _enforce_auth_rate_limit(request, "email_register")
     user = await auth_service.register_user_with_password(
         db=db,
         email=str(payload.email),
@@ -142,12 +135,7 @@ async def login_with_email(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    auth_rate_limiter.enforce(
-        request=request,
-        bucket="email_login",
-        limit=settings.AUTH_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
-    )
+    _enforce_auth_rate_limit(request, "email_login")
     bundle = await auth_service.create_password_login_session(
         db=db,
         email=str(payload.email),

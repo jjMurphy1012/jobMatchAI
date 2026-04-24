@@ -12,18 +12,23 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 
-const emptyExperienceForm: AdminInterviewExperiencePayload = {
+type ExperienceFormState = Omit<AdminInterviewExperiencePayload, 'topics' | 'relevance_keywords'> & {
+  topics_input: string
+  relevance_keywords_input: string
+}
+
+const emptyExperienceForm: ExperienceFormState = {
   company_name: '',
   role: '',
   level: '',
   year: undefined,
   rounds: '',
-  topics: [],
   summary: '',
   source_url: '',
   source_site: '',
   review_status: 'draft',
-  relevance_keywords: [],
+  topics_input: '',
+  relevance_keywords_input: '',
 }
 
 function splitCsv(value: string) {
@@ -44,11 +49,7 @@ export default function Admin() {
   const [deletingExperienceId, setDeletingExperienceId] = useState<string | null>(null)
   const [editingExperienceId, setEditingExperienceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [experienceForm, setExperienceForm] = useState({
-    ...emptyExperienceForm,
-    topics_input: '',
-    relevance_keywords_input: '',
-  })
+  const [experienceForm, setExperienceForm] = useState<ExperienceFormState>(emptyExperienceForm)
 
   useEffect(() => {
     void Promise.all([loadUsers(), loadExperiences()])
@@ -104,11 +105,7 @@ export default function Admin() {
 
   function startCreateExperience() {
     setEditingExperienceId(null)
-    setExperienceForm({
-      ...emptyExperienceForm,
-      topics_input: '',
-      relevance_keywords_input: '',
-    })
+    setExperienceForm(emptyExperienceForm)
   }
 
   function startEditExperience(experience: AdminInterviewExperience) {
@@ -119,12 +116,10 @@ export default function Admin() {
       level: experience.level || '',
       year: experience.year,
       rounds: experience.rounds || '',
-      topics: experience.topics,
       summary: experience.summary,
       source_url: experience.source_url || '',
       source_site: experience.source_site || '',
       review_status: experience.review_status,
-      relevance_keywords: experience.relevance_keywords,
       topics_input: experience.topics.join(', '),
       relevance_keywords_input: experience.relevance_keywords.join(', '),
     })

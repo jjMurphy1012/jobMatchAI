@@ -193,7 +193,8 @@ class Application(Base):
     """Persistent application lifecycle state for a user and opportunity."""
     __tablename__ = "applications"
     __table_args__ = (
-        UniqueConstraint("user_id", "opportunity_id", name="uq_applications_user_opportunity"),
+        # user_job_match_id uniqueness implies (user_id, opportunity_id) uniqueness
+        # via UserJobMatch.uq_user_job_matches_user_opportunity — no separate constraint needed.
         UniqueConstraint("user_job_match_id", name="uq_applications_user_job_match"),
     )
 

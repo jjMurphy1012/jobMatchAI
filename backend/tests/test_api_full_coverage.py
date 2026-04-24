@@ -15,6 +15,7 @@ from app.api import tasks as tasks_api
 from app.api.deps import get_current_user, require_admin
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import rate_limiter
 from app.models.models import (
     Application,
     DailyTask,
@@ -109,9 +110,9 @@ def build_app(*routers) -> FastAPI:
 
 @pytest.fixture(autouse=True)
 def reset_auth_rate_limiter():
-    auth_api.auth_rate_limiter.reset()
+    rate_limiter.reset()
     yield
-    auth_api.auth_rate_limiter.reset()
+    rate_limiter.reset()
 
 
 def test_google_callback_success_redirects_to_frontend_and_sets_cookies(monkeypatch):
@@ -430,12 +431,12 @@ def test_tasks_list_complete_uncomplete_and_stats():
         date=datetime.now(timezone.utc),
     )
     session = QueueSession(
-        FakeResult(items=[task]),
-        FakeResult(value=task),
-        FakeResult(items=[task]),
-        FakeResult(value=task),
-        FakeResult(items=[task]),
-        FakeResult(items=[task]),
+        FakeResult(items=[task]),  # GET /daily-tasks list query
+        FakeResult(value=task),    # PUT /complete → _load_task
+        FakeResult(value=0),        # PUT /complete → incomplete COUNT (0 = all done)
+        FakeResult(value=task),    # PUT /uncomplete → _load_task
+        FakeResult(value=1),        # GET /stats → total COUNT
+        FakeResult(value=0),        # GET /stats → completed COUNT
     )
     app = build_app(("/api/daily-tasks", tasks_api.router))
 

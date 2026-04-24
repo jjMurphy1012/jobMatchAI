@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import deque
 from threading import Lock
 from time import monotonic
 
@@ -17,23 +17,33 @@ def _client_identifier(request: Request) -> str:
 
 
 class InMemoryRateLimiter:
-    """Small per-process sliding-window rate limiter for auth endpoints."""
+    """Per-process sliding-window rate limiter for auth endpoints.
+
+    Limits are applied per worker — deploying with N uvicorn workers effectively
+    multiplies the limit by N. Switch to Redis (e.g. slowapi or fastapi-limiter)
+    before horizontally scaling.
+    """
 
     def __init__(self) -> None:
-        self._hits: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+        self._hits: dict[tuple[str, str], deque[float]] = {}
         self._lock = Lock()
 
     def enforce(self, request: Request, bucket: str, limit: int, window_seconds: int) -> None:
         now = monotonic()
         key = (bucket, _client_identifier(request))
+        cutoff = now - window_seconds
 
         with self._lock:
-            timestamps = self._hits[key]
-            cutoff = now - window_seconds
-            while timestamps and timestamps[0] <= cutoff:
-                timestamps.popleft()
+            timestamps = self._hits.get(key)
+            if timestamps is not None:
+                while timestamps and timestamps[0] <= cutoff:
+                    timestamps.popleft()
+                if not timestamps:
+                    # Evict fully-expired keys so one-off IPs don't leak a deque forever.
+                    del self._hits[key]
+                    timestamps = None
 
-            if len(timestamps) >= limit:
+            if timestamps and len(timestamps) >= limit:
                 retry_after = max(1, int(window_seconds - (now - timestamps[0])))
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -41,8 +51,14 @@ class InMemoryRateLimiter:
                     headers={"Retry-After": str(retry_after)},
                 )
 
+            if timestamps is None:
+                timestamps = self._hits[key] = deque()
             timestamps.append(now)
 
     def reset(self) -> None:
         with self._lock:
             self._hits.clear()
+
+
+# Process-wide singleton. Import this instead of instantiating new limiters.
+rate_limiter = InMemoryRateLimiter()

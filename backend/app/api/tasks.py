@@ -1,4 +1,5 @@
-from datetime import datetime
+import asyncio
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import pytz
@@ -11,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.enums import ApplicationStatus
 from app.models.models import Application, DailyTask, User, UserJobMatch
 
 router = APIRouter()
@@ -99,7 +101,7 @@ async def _set_application_status(
 ) -> None:
     user_match = task.user_job_match
     application = user_match.application
-    now = datetime.now(eastern)
+    now = datetime.now(timezone.utc)
 
     if application is None:
         db.add(
@@ -165,20 +167,24 @@ async def complete_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    now = datetime.now(eastern)
+    now = datetime.now(timezone.utc)
     task.is_completed = True
     task.completed_at = now
-    await _set_application_status(db, task, current_user.id, "applied", now)
+    await _set_application_status(db, task, current_user.id, ApplicationStatus.APPLIED, now)
     await db.commit()
 
     today = datetime.now(eastern).date()
-    all_tasks = await db.execute(
-        select(DailyTask)
+    incomplete_result = await db.execute(
+        select(func.count())
+        .select_from(DailyTask)
         .join(DailyTask.user_job_match)
-        .where(func.date(DailyTask.date) == today, UserJobMatch.user_id == current_user.id)
+        .where(
+            func.date(DailyTask.date) == today,
+            UserJobMatch.user_id == current_user.id,
+            DailyTask.is_completed.is_(False),
+        )
     )
-    tasks = all_tasks.scalars().all()
-    all_completed = all(t.is_completed for t in tasks)
+    all_completed = (incomplete_result.scalar_one() or 0) == 0
 
     return {
         "message": "Task completed!",
@@ -201,7 +207,7 @@ async def uncomplete_task(
 
     task.is_completed = False
     task.completed_at = None
-    await _set_application_status(db, task, current_user.id, "saved", None)
+    await _set_application_status(db, task, current_user.id, ApplicationStatus.SAVED, None)
     await db.commit()
 
     return {"message": "Task marked as incomplete", "task_id": task_id}
@@ -214,17 +220,24 @@ async def get_task_stats(
 ):
     """Get task completion statistics."""
     today = datetime.now(eastern).date()
+    today_filter = (func.date(DailyTask.date) == today, UserJobMatch.user_id == current_user.id)
 
-    today_query = (
-        select(DailyTask)
-        .join(DailyTask.user_job_match)
-        .where(func.date(DailyTask.date) == today, UserJobMatch.user_id == current_user.id)
+    total_result, completed_result = await asyncio.gather(
+        db.execute(
+            select(func.count())
+            .select_from(DailyTask)
+            .join(DailyTask.user_job_match)
+            .where(*today_filter)
+        ),
+        db.execute(
+            select(func.count())
+            .select_from(DailyTask)
+            .join(DailyTask.user_job_match)
+            .where(*today_filter, DailyTask.is_completed.is_(True))
+        ),
     )
-    today_result = await db.execute(today_query)
-    today_tasks = today_result.scalars().all()
-
-    total = len(today_tasks)
-    completed = sum(1 for task in today_tasks if task.is_completed)
+    total = total_result.scalar_one() or 0
+    completed = completed_result.scalar_one() or 0
     rate = (completed / total * 100) if total > 0 else 0
     all_done = completed == total and total > 0
     streak = 1 if all_done else 0
