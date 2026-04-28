@@ -18,11 +18,13 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limiter
 from app.models.models import (
     Application,
+    CompanySource,
     DailyTask,
     InterviewExperience,
     JobPreference,
     Opportunity,
     Resume,
+    SourceSyncRun,
     User,
     UserJobMatch,
 )
@@ -259,6 +261,98 @@ def test_admin_list_users_and_update_roles():
     self_remove_response = client.patch("/api/admin/users/admin-1/role", json={"role": "user"})
     assert self_remove_response.status_code == 400
     assert self_remove_response.json()["detail"] == "You cannot remove your own admin role."
+
+
+def test_admin_company_source_crud_sync_and_logs(monkeypatch):
+    admin_user = User(id="admin-1", email="admin@example.com", role="admin", is_disabled=False)
+    source = CompanySource(
+        id="source-1",
+        source_type="greenhouse",
+        company_name="Acme",
+        board_token="acme",
+        is_active=True,
+    )
+    run = SourceSyncRun(
+        id="run-1",
+        company_source_id="source-1",
+        source_type="greenhouse",
+        status="success",
+        started_at=datetime.now(timezone.utc),
+        finished_at=datetime.now(timezone.utc),
+        fetched_count=2,
+        upserted_count=2,
+        closed_count=1,
+    )
+    session = QueueSession(
+        FakeResult(items=[source]),
+        FakeResult(value=None),
+        FakeResult(value=source),
+        FakeResult(value=source),
+        FakeResult(value=source),
+        FakeResult(items=[run]),
+        FakeResult(value=source),
+    )
+    app = build_app(("/api/admin", admin_api.router))
+
+    async def override_db():
+        yield session
+
+    async def override_admin():
+        return admin_user
+
+    async def fake_sync_company_source(db, company_source):
+        assert db is session
+        assert company_source.id == "source-1"
+        return run
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[require_admin] = override_admin
+    monkeypatch.setattr(admin_api.source_sync_service, "sync_company_source", fake_sync_company_source)
+
+    client = TestClient(app)
+
+    list_response = client.get("/api/admin/company-sources")
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["board_token"] == "acme"
+
+    create_response = client.post(
+        "/api/admin/company-sources",
+        json={
+            "source_type": "greenhouse",
+            "company_name": "Netflix",
+            "board_token": "netflix",
+            "is_active": True,
+        },
+    )
+    assert create_response.status_code == 201
+    created = session.added[0]
+    assert isinstance(created, CompanySource)
+    assert created.created_by_user_id == "admin-1"
+
+    update_response = client.patch(
+        "/api/admin/company-sources/source-1",
+        json={
+            "source_type": "greenhouse",
+            "company_name": "Acme Jobs",
+            "board_token": "acme",
+            "is_active": True,
+        },
+    )
+    assert update_response.status_code == 200
+    assert source.company_name == "Acme Jobs"
+
+    sync_response = client.post("/api/admin/company-sources/source-1/sync")
+    assert sync_response.status_code == 200
+    assert sync_response.json()["upserted_count"] == 2
+    assert sync_response.json()["company_name"] == "Acme Jobs"
+
+    logs_response = client.get("/api/admin/source-sync-runs")
+    assert logs_response.status_code == 200
+    assert logs_response.json()[0]["status"] == "success"
+
+    delete_response = client.delete("/api/admin/company-sources/source-1")
+    assert delete_response.status_code == 200
+    assert source.is_active is False
 
 
 def test_resume_upload_get_and_delete(monkeypatch):

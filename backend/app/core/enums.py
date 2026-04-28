@@ -35,3 +35,23 @@ class UserRole:
 
 
 USER_ROLES: Final = frozenset({UserRole.USER, UserRole.ADMIN})
+
+
+class SourceType:
+    GREENHOUSE: Final = "greenhouse"
+
+
+SOURCE_TYPES: Final = frozenset({SourceType.GREENHOUSE})
+
+
+class SourceSyncStatus:
+    RUNNING: Final = "running"
+    SUCCESS: Final = "success"
+    FAILED: Final = "failed"
+
+
+SOURCE_SYNC_STATUSES: Final = frozenset({
+    SourceSyncStatus.RUNNING,
+    SourceSyncStatus.SUCCESS,
+    SourceSyncStatus.FAILED,
+})

@@ -8,15 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.auth import CurrentUserResponse
 from app.api.deps import require_admin
 from app.core.database import get_db
-from app.core.enums import REVIEW_STATUSES, ReviewStatus, USER_ROLES, UserRole
+from app.core.enums import REVIEW_STATUSES, SOURCE_TYPES, SourceType, ReviewStatus, USER_ROLES, UserRole
 from app.core.text import normalize_company
-from app.models.models import InterviewExperience, User
+from app.models.models import CompanySource, InterviewExperience, SourceSyncRun, User
+from app.services.source_sync_service import CompanySourceSyncService
 
 router = APIRouter()
+source_sync_service = CompanySourceSyncService()
 
 
 class AdminUserResponse(CurrentUserResponse):
@@ -26,6 +29,44 @@ class AdminUserResponse(CurrentUserResponse):
 
 class UpdateRoleRequest(BaseModel):
     role: str
+
+
+class CompanySourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    source_type: str
+    company_name: str
+    board_token: str
+    is_active: bool
+    last_synced_at: Optional[datetime]
+    created_by_user_id: Optional[str]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+
+class CompanySourceUpsertRequest(BaseModel):
+    source_type: str = Field(default=SourceType.GREENHOUSE)
+    company_name: str = Field(min_length=2, max_length=200)
+    board_token: str = Field(min_length=2, max_length=200)
+    is_active: bool = True
+
+
+class SourceSyncRunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    company_source_id: str
+    source_type: str
+    status: str
+    started_at: Optional[datetime]
+    finished_at: Optional[datetime]
+    fetched_count: int
+    upserted_count: int
+    closed_count: int
+    error_message: Optional[str]
+    company_name: Optional[str] = None
+    board_token: Optional[str] = None
 
 
 class AdminInterviewExperienceResponse(BaseModel):
@@ -88,6 +129,46 @@ def _apply_experience_payload(
     experience.reviewed_at = datetime.now(timezone.utc) if is_published else None
 
 
+def _validate_source_type(source_type: str) -> str:
+    normalized = source_type.strip().lower()
+    if normalized not in SOURCE_TYPES:
+        raise HTTPException(status_code=400, detail="source_type must be 'greenhouse'.")
+    return normalized
+
+
+def _apply_source_payload(source: CompanySource, payload: CompanySourceUpsertRequest) -> None:
+    source.source_type = _validate_source_type(payload.source_type)
+    source.company_name = payload.company_name.strip()
+    source.board_token = payload.board_token.strip()
+    source.is_active = payload.is_active
+
+
+async def _ensure_source_unique(
+    db: AsyncSession,
+    source_type: str,
+    board_token: str,
+    current_id: str | None = None,
+) -> None:
+    result = await db.execute(
+        select(CompanySource).where(
+            CompanySource.source_type == source_type,
+            CompanySource.board_token == board_token,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing and existing.id != current_id:
+        raise HTTPException(status_code=400, detail="This company source already exists.")
+
+
+def _build_sync_run_response(run: SourceSyncRun, source: CompanySource | None = None) -> SourceSyncRunResponse:
+    response = SourceSyncRunResponse.model_validate(run)
+    source_obj = source or run.company_source
+    if source_obj is not None:
+        response.company_name = source_obj.company_name
+        response.board_token = source_obj.board_token
+    return response
+
+
 @router.get("/users", response_model=list[AdminUserResponse])
 async def list_users(
     db: AsyncSession = Depends(get_db),
@@ -118,6 +199,105 @@ async def update_user_role(
     user.role = payload.role
     await db.flush()
     return AdminUserResponse.model_validate(user)
+
+
+@router.get("/company-sources", response_model=list[CompanySourceResponse])
+async def list_company_sources(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    result = await db.execute(
+        select(CompanySource).order_by(CompanySource.is_active.desc(), CompanySource.company_name.asc())
+    )
+    return [CompanySourceResponse.model_validate(source) for source in result.scalars().all()]
+
+
+@router.post(
+    "/company-sources",
+    response_model=CompanySourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_company_source(
+    payload: CompanySourceUpsertRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    source_type = _validate_source_type(payload.source_type)
+    board_token = payload.board_token.strip()
+    await _ensure_source_unique(db, source_type, board_token)
+
+    source = CompanySource(id=str(uuid4()), created_by_user_id=current_admin.id)
+    _apply_source_payload(source, payload)
+    db.add(source)
+    await db.flush()
+    return CompanySourceResponse.model_validate(source)
+
+
+@router.patch("/company-sources/{source_id}", response_model=CompanySourceResponse)
+async def update_company_source(
+    source_id: str,
+    payload: CompanySourceUpsertRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    result = await db.execute(select(CompanySource).where(CompanySource.id == source_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Company source not found.")
+
+    source_type = _validate_source_type(payload.source_type)
+    board_token = payload.board_token.strip()
+    await _ensure_source_unique(db, source_type, board_token, current_id=source.id)
+    _apply_source_payload(source, payload)
+    await db.flush()
+    return CompanySourceResponse.model_validate(source)
+
+
+@router.delete("/company-sources/{source_id}")
+async def delete_company_source(
+    source_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    result = await db.execute(select(CompanySource).where(CompanySource.id == source_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Company source not found.")
+
+    source.is_active = False
+    await db.flush()
+    return {"message": "Company source deactivated."}
+
+
+@router.post("/company-sources/{source_id}/sync", response_model=SourceSyncRunResponse)
+async def sync_company_source(
+    source_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    result = await db.execute(select(CompanySource).where(CompanySource.id == source_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Company source not found.")
+
+    run = await source_sync_service.sync_company_source(db, source)
+    return _build_sync_run_response(run, source)
+
+
+@router.get("/source-sync-runs", response_model=list[SourceSyncRunResponse])
+async def list_source_sync_runs(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    capped_limit = min(max(limit, 1), 100)
+    result = await db.execute(
+        select(SourceSyncRun)
+        .options(selectinload(SourceSyncRun.company_source))
+        .order_by(SourceSyncRun.started_at.desc())
+        .limit(capped_limit)
+    )
+    return [_build_sync_run_response(run) for run in result.scalars().all()]
 
 
 @router.get("/interview-experiences", response_model=list[AdminInterviewExperienceResponse])

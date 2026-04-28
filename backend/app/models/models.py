@@ -132,6 +132,45 @@ class Job(Base):
     daily_task = relationship("DailyTask", back_populates="job", uselist=False)
 
 
+class CompanySource(Base):
+    """Admin-managed external job source for a company."""
+    __tablename__ = "company_sources"
+    __table_args__ = (
+        UniqueConstraint("source_type", "board_token", name="uq_company_sources_source_board"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    source_type = Column(String, nullable=False)
+    company_name = Column(String, nullable=False)
+    board_token = Column(String, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    created_by_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    sync_runs = relationship("SourceSyncRun", back_populates="company_source", cascade="all, delete-orphan")
+    opportunities = relationship("Opportunity", back_populates="company_source")
+
+
+class SourceSyncRun(Base):
+    """Single sync attempt for an external company source."""
+    __tablename__ = "source_sync_runs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    company_source_id = Column(String, ForeignKey("company_sources.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_type = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    fetched_count = Column(Integer, nullable=False, default=0)
+    upserted_count = Column(Integer, nullable=False, default=0)
+    closed_count = Column(Integer, nullable=False, default=0)
+    error_message = Column(Text, nullable=True)
+
+    company_source = relationship("CompanySource", back_populates="sync_runs")
+
+
 class Opportunity(Base):
     """Global job opportunity shared across users."""
     __tablename__ = "opportunities"
@@ -140,6 +179,7 @@ class Opportunity(Base):
     )
 
     id = Column(String, primary_key=True, default=generate_uuid)
+    company_source_id = Column(String, ForeignKey("company_sources.id", ondelete="SET NULL"), nullable=True, index=True)
     source_type = Column(String, nullable=False)
     source_job_id = Column(String, nullable=False)
 
@@ -158,6 +198,7 @@ class Opportunity(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    company_source = relationship("CompanySource", back_populates="opportunities")
     user_job_matches = relationship("UserJobMatch", back_populates="opportunity", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="opportunity", cascade="all, delete-orphan")
 

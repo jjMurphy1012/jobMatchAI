@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Shield, Trash2, Users } from 'lucide-react'
+import { BookOpen, Database, Power, RefreshCw, Shield, Trash2, Users } from 'lucide-react'
 
 import {
   adminApi,
   AdminInterviewExperience,
   AdminInterviewExperiencePayload,
   AdminUser,
+  CompanySource,
+  CompanySourcePayload,
+  SourceSyncRun,
 } from '../api/client'
 import { useAuth } from '../components/auth/AuthProvider'
 import { Badge } from '../components/ui/badge'
@@ -16,6 +19,8 @@ type ExperienceFormState = Omit<AdminInterviewExperiencePayload, 'topics' | 'rel
   topics_input: string
   relevance_keywords_input: string
 }
+
+type SourceFormState = CompanySourcePayload
 
 const emptyExperienceForm: ExperienceFormState = {
   company_name: '',
@@ -31,6 +36,13 @@ const emptyExperienceForm: ExperienceFormState = {
   relevance_keywords_input: '',
 }
 
+const emptySourceForm: SourceFormState = {
+  source_type: 'greenhouse',
+  company_name: '',
+  board_token: '',
+  is_active: true,
+}
+
 function splitCsv(value: string) {
   return value
     .split(',')
@@ -41,21 +53,33 @@ function splitCsv(value: string) {
 export default function Admin() {
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<AdminUser[]>([])
+  const [companySources, setCompanySources] = useState<CompanySource[]>([])
+  const [syncRuns, setSyncRuns] = useState<SourceSyncRun[]>([])
   const [experiences, setExperiences] = useState<AdminInterviewExperience[]>([])
   const [loadingUsers, setLoadingUsers] = useState(true)
+  const [loadingSources, setLoadingSources] = useState(true)
+  const [loadingSyncRuns, setLoadingSyncRuns] = useState(true)
   const [loadingExperiences, setLoadingExperiences] = useState(true)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [savingSource, setSavingSource] = useState(false)
+  const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null)
+  const [editingSourceId, setEditingSourceId] = useState<string | null>(null)
   const [savingExperience, setSavingExperience] = useState(false)
   const [deletingExperienceId, setDeletingExperienceId] = useState<string | null>(null)
   const [editingExperienceId, setEditingExperienceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sourceForm, setSourceForm] = useState<SourceFormState>(emptySourceForm)
   const [experienceForm, setExperienceForm] = useState<ExperienceFormState>(emptyExperienceForm)
 
   useEffect(() => {
-    void Promise.all([loadUsers(), loadExperiences()])
+    void Promise.all([loadUsers(), loadCompanySources(), loadSyncRuns(), loadExperiences()])
   }, [])
 
   const adminsCount = useMemo(() => users.filter((item) => item.role === 'admin').length, [users])
+  const activeSourceCount = useMemo(
+    () => companySources.filter((item) => item.is_active).length,
+    [companySources]
+  )
   const publishedCount = useMemo(
     () => experiences.filter((item) => item.review_status === 'published').length,
     [experiences]
@@ -71,6 +95,30 @@ export default function Admin() {
       setError(response.error || 'Unable to load users.')
     }
     setLoadingUsers(false)
+  }
+
+  async function loadCompanySources() {
+    setLoadingSources(true)
+    const response = await adminApi.listCompanySources()
+    if (response.data) {
+      setCompanySources(response.data)
+      setError(null)
+    } else {
+      setError(response.error || 'Unable to load company sources.')
+    }
+    setLoadingSources(false)
+  }
+
+  async function loadSyncRuns() {
+    setLoadingSyncRuns(true)
+    const response = await adminApi.listSourceSyncRuns(12)
+    if (response.data) {
+      setSyncRuns(response.data)
+      setError(null)
+    } else {
+      setError(response.error || 'Unable to load source sync logs.')
+    }
+    setLoadingSyncRuns(false)
   }
 
   async function loadExperiences() {
@@ -101,6 +149,72 @@ export default function Admin() {
       setError(response.error || 'Unable to update user role.')
     }
     setUpdatingUserId(null)
+  }
+
+  function startCreateSource() {
+    setEditingSourceId(null)
+    setSourceForm(emptySourceForm)
+  }
+
+  function startEditSource(source: CompanySource) {
+    setEditingSourceId(source.id)
+    setSourceForm({
+      source_type: source.source_type,
+      company_name: source.company_name,
+      board_token: source.board_token,
+      is_active: source.is_active,
+    })
+  }
+
+  async function saveSource() {
+    setSavingSource(true)
+    const payload: CompanySourcePayload = {
+      source_type: 'greenhouse',
+      company_name: sourceForm.company_name.trim(),
+      board_token: sourceForm.board_token.trim(),
+      is_active: sourceForm.is_active,
+    }
+
+    const response = editingSourceId
+      ? await adminApi.updateCompanySource(editingSourceId, payload)
+      : await adminApi.createCompanySource(payload)
+
+    if (response.data) {
+      setError(null)
+      startCreateSource()
+      await loadCompanySources()
+    } else {
+      setError(response.error || 'Unable to save company source.')
+    }
+    setSavingSource(false)
+  }
+
+  async function deactivateSource(id: string) {
+    const response = await adminApi.deleteCompanySource(id)
+    if (response.data) {
+      setCompanySources((current) =>
+        current.map((source) => (source.id === id ? { ...source, is_active: false } : source))
+      )
+      setError(null)
+      if (editingSourceId === id) {
+        startCreateSource()
+      }
+    } else {
+      setError(response.error || 'Unable to deactivate company source.')
+    }
+  }
+
+  async function syncSource(id: string) {
+    setSyncingSourceId(id)
+    const response = await adminApi.syncCompanySource(id)
+    if (response.data) {
+      const run = response.data
+      setError(run.status === 'failed' ? run.error_message || 'Source sync failed.' : null)
+      await Promise.all([loadCompanySources(), loadSyncRuns()])
+    } else {
+      setError(response.error || 'Unable to sync company source.')
+    }
+    setSyncingSourceId(null)
   }
 
   function startCreateExperience() {
@@ -181,7 +295,7 @@ export default function Admin() {
               Access and content operations
             </h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
-              Manage access, curate the interview library, and control what appears in the user-facing interview prep experience.
+              Manage access, configure Greenhouse job sources, curate the interview library, and control user-facing career content.
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/10 bg-primary/5 px-4 py-2 text-sm font-semibold text-primary">
@@ -197,7 +311,7 @@ export default function Admin() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="surface-soft">
           <CardHeader className="pb-2">
             <CardDescription>Total users</CardDescription>
@@ -210,6 +324,12 @@ export default function Admin() {
             <CardTitle className="text-3xl">{adminsCount}</CardTitle>
           </CardHeader>
         </Card>
+        <Card className="surface-soft">
+          <CardHeader className="pb-2">
+            <CardDescription>Active sources</CardDescription>
+            <CardTitle className="text-3xl">{activeSourceCount}</CardTitle>
+          </CardHeader>
+        </Card>
         <Card className="surface-soft bg-[linear-gradient(180deg,rgba(26,86,219,0.06),rgba(255,255,255,0.94))]">
           <CardHeader className="pb-2">
             <CardDescription>Interview experiences</CardDescription>
@@ -217,6 +337,199 @@ export default function Admin() {
           </CardHeader>
         </Card>
       </div>
+
+      <Card className="border-white/80 bg-white/92">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Database className="h-5 w-5 text-slate-500" />
+            <div>
+              <CardTitle className="text-xl">Company job sources</CardTitle>
+              <CardDescription>
+                Configure Greenhouse boards and sync them into the shared opportunities pool.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+              <label className="grid gap-2 text-sm text-slate-700">
+                Source type
+                <select
+                  className="input"
+                  value={sourceForm.source_type}
+                  onChange={(event) =>
+                    setSourceForm((current) => ({ ...current, source_type: event.target.value as 'greenhouse' }))
+                  }
+                >
+                  <option value="greenhouse">greenhouse</option>
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm text-slate-700">
+                Company
+                <input
+                  className="input"
+                  value={sourceForm.company_name}
+                  onChange={(event) => setSourceForm((current) => ({ ...current, company_name: event.target.value }))}
+                />
+              </label>
+              <label className="grid gap-2 text-sm text-slate-700 md:col-span-2 xl:col-span-1">
+                Board token
+                <input
+                  className="input"
+                  value={sourceForm.board_token}
+                  onChange={(event) => setSourceForm((current) => ({ ...current, board_token: event.target.value }))}
+                />
+              </label>
+            </div>
+            <label className="inline-flex items-center gap-3 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={sourceForm.is_active}
+                onChange={(event) => setSourceForm((current) => ({ ...current, is_active: event.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+              />
+              Active source
+            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                onClick={() => void saveSource()}
+                disabled={savingSource || !sourceForm.company_name.trim() || !sourceForm.board_token.trim()}
+              >
+                {savingSource ? 'Saving...' : editingSourceId ? 'Save Source' : 'Add Source'}
+              </Button>
+              <Button variant="outline" onClick={startCreateSource}>
+                Reset
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Sources</h3>
+                <Button variant="ghost" size="sm" onClick={() => void loadCompanySources()}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
+              {loadingSources ? (
+                <div className="flex items-center gap-3 py-8 text-sm text-slate-500">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                  Loading sources...
+                </div>
+              ) : companySources.length === 0 ? (
+                <div className="rounded-[1.5rem] border border-dashed border-slate-200 px-6 py-8 text-center text-sm text-slate-500">
+                  No company sources yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {companySources.map((source) => (
+                    <div key={source.id} className="surface-soft rounded-[1.5rem] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-slate-900">{source.company_name}</p>
+                            <Badge variant={source.is_active ? 'success' : 'secondary'}>
+                              {source.is_active ? 'active' : 'inactive'}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 truncate text-sm text-slate-500">{source.board_token}</p>
+                          <p className="mt-2 text-xs text-slate-400">
+                            {source.last_synced_at
+                              ? `Last synced ${new Date(source.last_synced_at).toLocaleString()}`
+                              : 'Never synced'}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Button variant="outline" size="sm" onClick={() => startEditSource(source)}>
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={!source.is_active || syncingSourceId === source.id}
+                            onClick={() => void syncSource(source.id)}
+                          >
+                            <RefreshCw
+                              className={`mr-2 h-4 w-4 ${syncingSourceId === source.id ? 'animate-spin' : ''}`}
+                            />
+                            {syncingSourceId === source.id ? 'Syncing...' : 'Sync'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!source.is_active}
+                            onClick={() => void deactivateSource(source.id)}
+                          >
+                            <Power className="mr-2 h-4 w-4" />
+                            Disable
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Sync log</h3>
+                <Button variant="ghost" size="sm" onClick={() => void loadSyncRuns()}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
+              {loadingSyncRuns ? (
+                <div className="flex items-center gap-3 py-8 text-sm text-slate-500">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                  Loading sync logs...
+                </div>
+              ) : syncRuns.length === 0 ? (
+                <div className="rounded-[1.5rem] border border-dashed border-slate-200 px-6 py-8 text-center text-sm text-slate-500">
+                  No sync runs yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {syncRuns.map((run) => (
+                    <div key={run.id} className="rounded-[1.5rem] border border-slate-200 bg-white/80 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {run.company_name || run.board_token || run.company_source_id}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {run.started_at ? new Date(run.started_at).toLocaleString() : 'Pending'}
+                          </p>
+                        </div>
+                        <Badge
+                          variant={
+                            run.status === 'success'
+                              ? 'success'
+                              : run.status === 'failed'
+                                ? 'destructive'
+                                : 'warning'
+                          }
+                        >
+                          {run.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-500">
+                        <span>{run.fetched_count} fetched</span>
+                        <span>{run.upserted_count} upserted</span>
+                        <span>{run.closed_count} closed</span>
+                      </div>
+                      {run.error_message && (
+                        <p className="mt-3 line-clamp-3 text-xs leading-5 text-rose-600">{run.error_message}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <Card className="border-white/80 bg-white/92">

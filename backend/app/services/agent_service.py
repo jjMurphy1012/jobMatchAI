@@ -137,32 +137,112 @@ class JobMatchingAgent:
                 "preferences": {
                     "keywords": keyword_text,
                     "location": location,
+                    "locations": effective_fields.locations,
                     "is_intern": effective_fields.is_intern if pref.effective_fields else pref.is_intern,
                     "need_sponsor": effective_fields.need_sponsor if pref.effective_fields else pref.need_sponsor,
                     "job_description": profile_text,
                     "profile_text": profile_text,
                     "remote_preference": effective_fields.remote_preference if pref.effective_fields else pref.remote_preference,
+                    "excluded_companies": effective_fields.excluded_companies,
                 },
                 "threshold": settings.MATCH_THRESHOLD
             }
 
     async def _search_jobs(self, state: AgentState) -> AgentState:
-        """Search for jobs using LinkedIn API."""
+        """Load open synced opportunities, with legacy public API fallback."""
         if state.get("error"):
             return state
 
         prefs = state["preferences"]
-        logger.info(f"Searching jobs with keywords: {prefs['keywords']}, location: {prefs.get('location')}, is_intern: {prefs.get('is_intern')}")
+        logger.info(
+            "Loading synced opportunities with keywords=%s, location=%s, is_intern=%s",
+            prefs["keywords"],
+            prefs.get("location"),
+            prefs.get("is_intern"),
+        )
 
-        jobs = await self.linkedin_service.search_jobs(
+        jobs = await self._load_synced_opportunities(prefs, limit=max(settings.TARGET_JOBS * 3, 20))
+        if jobs:
+            logger.info("Loaded %s synced opportunities for scoring", len(jobs))
+            return {**state, "raw_jobs": jobs}
+
+        logger.info("No synced opportunities available; falling back to legacy public job APIs")
+        legacy_jobs = await self.linkedin_service.search_jobs(
             keywords=prefs["keywords"],
             location=prefs.get("location"),
             limit=20,
             is_intern=prefs.get("is_intern", False)
         )
 
-        logger.info(f"LinkedIn returned {len(jobs)} jobs")
-        return {**state, "raw_jobs": jobs}
+        logger.info("Legacy public APIs returned %s jobs", len(legacy_jobs))
+        return {**state, "raw_jobs": legacy_jobs}
+
+    async def _load_synced_opportunities(self, prefs: dict, limit: int) -> list[dict]:
+        async with async_session_maker() as db:
+            result = await db.execute(
+                select(Opportunity)
+                .where(Opportunity.is_open.is_(True))
+                .order_by(Opportunity.last_seen_at.desc(), Opportunity.updated_at.desc())
+                .limit(200)
+            )
+            opportunities = result.scalars().all()
+
+        excluded = {company.strip().lower() for company in prefs.get("excluded_companies", []) if company.strip()}
+        keywords = [keyword.strip().lower() for keyword in prefs.get("keywords", "").split(",") if keyword.strip()]
+        locations = [location.strip().lower() for location in prefs.get("locations", []) if location.strip()]
+        remote_preference = prefs.get("remote_preference")
+        is_intern = prefs.get("is_intern", False)
+
+        ranked: list[tuple[int, Opportunity]] = []
+        for opportunity in opportunities:
+            company_lower = (opportunity.company or "").lower()
+            if company_lower in excluded:
+                continue
+
+            title_lower = (opportunity.title or "").lower()
+            description_lower = (opportunity.description or "").lower()
+            location_lower = (opportunity.location or "").lower()
+            searchable_text = f"{title_lower} {description_lower}"
+
+            if is_intern and "intern" not in title_lower and "internship" not in title_lower:
+                continue
+
+            rank = 0
+            if keywords and any(keyword in searchable_text for keyword in keywords):
+                rank += 3
+            if locations and any(location in location_lower for location in locations):
+                rank += 2
+            if remote_preference == "remote" and "remote" in location_lower:
+                rank += 1
+            if opportunity.source_type == "greenhouse":
+                rank += 1
+
+            ranked.append((rank, opportunity))
+
+        if keywords and ranked and max(rank for rank, _ in ranked) > 0:
+            ranked = [item for item in ranked if item[0] > 0]
+
+        def sort_timestamp(opportunity: Opportunity) -> float:
+            value = opportunity.last_seen_at or opportunity.updated_at or opportunity.created_at
+            return value.timestamp() if value else 0.0
+
+        ranked.sort(key=lambda item: (item[0], sort_timestamp(item[1])), reverse=True)
+
+        return [
+            {
+                "source_type": opportunity.source_type,
+                "source_job_id": opportunity.source_job_id,
+                "title": opportunity.title,
+                "company": opportunity.company,
+                "location": opportunity.location,
+                "salary": opportunity.salary,
+                "url": opportunity.url,
+                "description": opportunity.description,
+                "posted_at": opportunity.posted_at,
+                "raw_payload": opportunity.raw_payload,
+            }
+            for _, opportunity in ranked[:limit]
+        ]
 
     async def _analyze_matches(self, state: AgentState) -> AgentState:
         """Analyze job-resume match scores using LLM."""

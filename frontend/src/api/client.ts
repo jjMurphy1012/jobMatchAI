@@ -96,6 +96,27 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     }),
+  listCompanySources: () => fetchApi<CompanySource[]>('/api/admin/company-sources'),
+  createCompanySource: (payload: CompanySourcePayload) =>
+    fetchApi<CompanySource>('/api/admin/company-sources', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateCompanySource: (id: string, payload: CompanySourcePayload) =>
+    fetchApi<CompanySource>(`/api/admin/company-sources/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteCompanySource: (id: string) =>
+    fetchApi<AuthMessage>(`/api/admin/company-sources/${id}`, {
+      method: 'DELETE',
+    }),
+  syncCompanySource: (id: string) =>
+    fetchApi<SourceSyncRun>(`/api/admin/company-sources/${id}/sync`, {
+      method: 'POST',
+    }),
+  listSourceSyncRuns: (limit = 20) =>
+    fetchApi<SourceSyncRun[]>(`/api/admin/source-sync-runs?limit=${limit}`),
   listInterviewExperiences: () =>
     fetchApi<AdminInterviewExperience[]>('/api/admin/interview-experiences'),
   createInterviewExperience: (payload: AdminInterviewExperiencePayload) =>
@@ -207,6 +228,40 @@ export interface EmailLoginPayload {
 export interface AdminUser extends CurrentUser {
   created_at?: string;
   last_login_at?: string;
+}
+
+export interface CompanySource {
+  id: string;
+  source_type: 'greenhouse';
+  company_name: string;
+  board_token: string;
+  is_active: boolean;
+  last_synced_at?: string;
+  created_by_user_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CompanySourcePayload {
+  source_type: 'greenhouse';
+  company_name: string;
+  board_token: string;
+  is_active: boolean;
+}
+
+export interface SourceSyncRun {
+  id: string;
+  company_source_id: string;
+  source_type: 'greenhouse';
+  status: 'running' | 'success' | 'failed';
+  started_at?: string;
+  finished_at?: string;
+  fetched_count: number;
+  upserted_count: number;
+  closed_count: number;
+  error_message?: string;
+  company_name?: string;
+  board_token?: string;
 }
 
 export interface AdminInterviewExperience {
