@@ -483,6 +483,8 @@ def test_jobs_list_detail_and_apply():
     body = list_response.json()
     assert body["total"] == 1
     assert body["jobs"][0]["title"] == "Backend Engineer"
+    assert body["jobs"][0]["source_type"] == "remotive"
+    assert body["jobs"][0]["source_job_id"] == "123"
     assert body["jobs"][0]["application_status"] == "saved"
     assert body["jobs"][0]["is_applied"] is False
 

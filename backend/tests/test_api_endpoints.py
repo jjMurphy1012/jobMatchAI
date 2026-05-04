@@ -342,7 +342,13 @@ def test_jobs_refresh_runs_synchronously(monkeypatch):
 
     async def fake_run_job_search(user_id: str):
         assert user_id == "user-1"
-        return {"success": True, "jobs_found": 4, "final_threshold": 65}
+        return {
+            "success": True,
+            "jobs_found": 4,
+            "final_threshold": 65,
+            "used_synced_opportunities": True,
+            "source_counts": {"greenhouse": 4},
+        }
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = override_user
@@ -357,4 +363,6 @@ def test_jobs_refresh_runs_synchronously(monkeypatch):
         "status": "completed",
         "jobs_found": 4,
         "final_threshold": 65,
+        "used_synced_opportunities": True,
+        "source_counts": {"greenhouse": 4},
     }

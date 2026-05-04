@@ -373,6 +373,8 @@ export interface PreferenceOverrideFields {
 
 export interface JobResponse {
   id: string;
+  source_type?: string;
+  source_job_id?: string;
   title: string;
   company: string;
   location?: string;
@@ -399,6 +401,8 @@ export interface JobRefreshResponse {
   status: 'completed';
   jobs_found: number;
   final_threshold?: number;
+  used_synced_opportunities: boolean;
+  source_counts: Record<string, number>;
 }
 
 export interface DailyTask {

@@ -557,10 +557,17 @@ Do not include placeholders like [Your Name] - write it ready to use.
         try:
             logger.info("Starting job matching workflow...")
             final_state = await workflow.ainvoke(initial_state, config=config)
+            matched_jobs = final_state.get("matched_jobs", [])
+            source_counts: dict[str, int] = {}
+            for job in matched_jobs:
+                source_type = job.get("source_type") or "unknown"
+                source_counts[source_type] = source_counts.get(source_type, 0) + 1
             return {
                 "success": True,
-                "jobs_found": len(final_state.get("matched_jobs", [])),
-                "final_threshold": final_state.get("threshold")
+                "jobs_found": len(matched_jobs),
+                "final_threshold": final_state.get("threshold"),
+                "used_synced_opportunities": bool(source_counts.get("greenhouse")),
+                "source_counts": source_counts,
             }
         except Exception as e:
             logger.error(f"Agent workflow error: {e}")

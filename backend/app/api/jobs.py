@@ -4,7 +4,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,6 +23,8 @@ class JobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    source_type: Optional[str] = None
+    source_job_id: Optional[str] = None
     title: str
     company: str
     location: Optional[str]
@@ -48,6 +50,8 @@ class JobRefreshResponse(BaseModel):
     status: str
     jobs_found: int = 0
     final_threshold: Optional[int] = None
+    used_synced_opportunities: bool = False
+    source_counts: dict[str, int] = Field(default_factory=dict)
 
 
 def _build_job_response(user_match: UserJobMatch) -> JobResponse:
@@ -57,6 +61,8 @@ def _build_job_response(user_match: UserJobMatch) -> JobResponse:
 
     return JobResponse(
         id=user_match.id,
+        source_type=opportunity.source_type,
+        source_job_id=opportunity.source_job_id,
         title=opportunity.title,
         company=opportunity.company,
         location=opportunity.location,
@@ -168,6 +174,8 @@ async def refresh_jobs(
         status="completed",
         jobs_found=result.get("jobs_found", 0),
         final_threshold=result.get("final_threshold"),
+        used_synced_opportunities=result.get("used_synced_opportunities", False),
+        source_counts=result.get("source_counts", {}),
     )
 
 
