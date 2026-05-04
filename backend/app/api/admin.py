@@ -136,8 +136,12 @@ def _validate_source_type(source_type: str) -> str:
     return normalized
 
 
-def _apply_source_payload(source: CompanySource, payload: CompanySourceUpsertRequest) -> None:
-    source.source_type = _validate_source_type(payload.source_type)
+def _apply_source_payload(
+    source: CompanySource,
+    payload: CompanySourceUpsertRequest,
+    source_type: str,
+) -> None:
+    source.source_type = source_type
     source.company_name = payload.company_name.strip()
     source.board_token = payload.board_token.strip()
     source.is_active = payload.is_active
@@ -227,7 +231,7 @@ async def create_company_source(
     await _ensure_source_unique(db, source_type, board_token)
 
     source = CompanySource(id=str(uuid4()), created_by_user_id=current_admin.id)
-    _apply_source_payload(source, payload)
+    _apply_source_payload(source, payload, source_type)
     db.add(source)
     await db.flush()
     return CompanySourceResponse.model_validate(source)
@@ -248,13 +252,16 @@ async def update_company_source(
     source_type = _validate_source_type(payload.source_type)
     board_token = payload.board_token.strip()
     await _ensure_source_unique(db, source_type, board_token, current_id=source.id)
-    _apply_source_payload(source, payload)
+    _apply_source_payload(source, payload, source_type)
     await db.flush()
     return CompanySourceResponse.model_validate(source)
 
 
-@router.delete("/company-sources/{source_id}")
-async def delete_company_source(
+@router.patch(
+    "/company-sources/{source_id}/deactivate",
+    response_model=CompanySourceResponse,
+)
+async def deactivate_company_source(
     source_id: str,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
@@ -266,7 +273,7 @@ async def delete_company_source(
 
     source.is_active = False
     await db.flush()
-    return {"message": "Company source deactivated."}
+    return CompanySourceResponse.model_validate(source)
 
 
 @router.post("/company-sources/{source_id}/sync", response_model=SourceSyncRunResponse)

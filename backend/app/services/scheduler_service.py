@@ -10,7 +10,6 @@ from app.core.database import async_session_maker
 from app.models.models import (
     Application,
     DailyTask,
-    Job,
     JobPreference,
     Opportunity,
     Resume,
@@ -116,15 +115,6 @@ class SchedulerService:
                 # Delete old daily tasks first (foreign key constraint)
                 await db.execute(
                     delete(DailyTask).where(DailyTask.date < cutoff_date)
-                )
-
-                # Delete old jobs
-                await db.execute(
-                    delete(Job).where(
-                        Job.searched_at < cutoff_date,
-                        Job.is_applied.is_(False),
-                        Job.cover_letter.is_(None),
-                    )
                 )
 
                 await db.execute(

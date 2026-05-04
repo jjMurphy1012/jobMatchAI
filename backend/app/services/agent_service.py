@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from typing import TypedDict, List, Optional, Annotated
 from operator import add
-from sqlalchemy import select, func
+from sqlalchemy import select, func, tuple_
 from datetime import datetime, timezone
 import asyncio
 import json
@@ -42,6 +42,22 @@ def _parse_posted_at(value):
             except ValueError:
                 continue
     return None
+
+
+def _build_preference_context(pref: JobPreference) -> dict:
+    fields = PreferenceStructuredFields.model_validate(pref.effective_fields or {})
+    profile_text = pref.raw_text or ""
+    return {
+        "keywords": ", ".join(fields.keywords),
+        "location": fields.locations[0] if fields.locations else None,
+        "locations": fields.locations,
+        "is_intern": fields.is_intern,
+        "need_sponsor": fields.need_sponsor,
+        "job_description": profile_text,
+        "profile_text": profile_text,
+        "remote_preference": fields.remote_preference,
+        "excluded_companies": fields.excluded_companies,
+    }
 
 
 class AgentState(TypedDict):
@@ -126,25 +142,10 @@ class JobMatchingAgent:
             if not resume or not pref:
                 return {**state, "error": "Missing resume or preferences"}
 
-            effective_fields = PreferenceStructuredFields.model_validate(pref.effective_fields or {})
-            keyword_text = ", ".join(effective_fields.keywords) or pref.keywords or ""
-            location = effective_fields.locations[0] if effective_fields.locations else pref.location
-            profile_text = pref.raw_text or pref.job_description or ""
-
             return {
                 **state,
                 "resume_text": resume.content or "",
-                "preferences": {
-                    "keywords": keyword_text,
-                    "location": location,
-                    "locations": effective_fields.locations,
-                    "is_intern": effective_fields.is_intern if pref.effective_fields else pref.is_intern,
-                    "need_sponsor": effective_fields.need_sponsor if pref.effective_fields else pref.need_sponsor,
-                    "job_description": profile_text,
-                    "profile_text": profile_text,
-                    "remote_preference": effective_fields.remote_preference if pref.effective_fields else pref.remote_preference,
-                    "excluded_companies": effective_fields.excluded_companies,
-                },
+                "preferences": _build_preference_context(pref),
                 "threshold": settings.MATCH_THRESHOLD
             }
 
@@ -427,6 +428,7 @@ Do not include placeholders like [Your Name] - write it ready to use.
         current_match_ids: set[str] = set()
 
         async with async_session_maker() as db:
+            prepared_jobs = []
             for i, job_data in enumerate(matched):
                 source_type = job_data.get("source_type") or "legacy"
                 source_job_id = str(
@@ -435,15 +437,24 @@ Do not include placeholders like [Your Name] - write it ready to use.
                     or job_data.get("url")
                     or f"generated-{i}"
                 )
+                prepared_jobs.append((i, job_data, source_type, source_job_id))
 
+            source_keys = [(source_type, source_job_id) for _, _, source_type, source_job_id in prepared_jobs]
+            existing_opportunities: dict[tuple[str, str], Opportunity] = {}
+            if source_keys:
                 opportunity_result = await db.execute(
                     select(Opportunity).where(
-                        Opportunity.source_type == source_type,
-                        Opportunity.source_job_id == source_job_id,
+                        tuple_(Opportunity.source_type, Opportunity.source_job_id).in_(source_keys)
                     )
                 )
-                opportunity = opportunity_result.scalar_one_or_none()
+                existing_opportunities = {
+                    (opportunity.source_type, opportunity.source_job_id): opportunity
+                    for opportunity in opportunity_result.scalars().all()
+                }
 
+            opportunity_rows: list[tuple[int, dict, Opportunity]] = []
+            for i, job_data, source_type, source_job_id in prepared_jobs:
+                opportunity = existing_opportunities.get((source_type, source_job_id))
                 if opportunity is None:
                     opportunity = Opportunity(
                         source_type=source_type,
@@ -459,7 +470,6 @@ Do not include placeholders like [Your Name] - write it ready to use.
                         is_open=True,
                     )
                     db.add(opportunity)
-                    await db.flush()
                 else:
                     opportunity.title = job_data["title"]
                     opportunity.company = job_data["company"]
@@ -471,15 +481,28 @@ Do not include placeholders like [Your Name] - write it ready to use.
                     opportunity.posted_at = _parse_posted_at(job_data.get("posted_at")) or opportunity.posted_at
                     opportunity.is_open = True
                     opportunity.last_seen_at = now
+                opportunity_rows.append((i, job_data, opportunity))
 
+            if opportunity_rows:
+                await db.flush()
+
+            opportunity_ids = [opportunity.id for _, _, opportunity in opportunity_rows]
+            existing_matches: dict[str, UserJobMatch] = {}
+            if opportunity_ids:
                 match_result = await db.execute(
                     select(UserJobMatch).where(
                         UserJobMatch.user_id == self.user_id,
-                        UserJobMatch.opportunity_id == opportunity.id,
+                        UserJobMatch.opportunity_id.in_(opportunity_ids),
                     )
                 )
-                user_match = match_result.scalar_one_or_none()
+                existing_matches = {
+                    user_match.opportunity_id: user_match
+                    for user_match in match_result.scalars().all()
+                }
 
+            match_rows: list[tuple[int, UserJobMatch]] = []
+            for i, job_data, opportunity in opportunity_rows:
+                user_match = existing_matches.get(opportunity.id)
                 if user_match is None:
                     user_match = UserJobMatch(
                         user_id=self.user_id,
@@ -491,7 +514,6 @@ Do not include placeholders like [Your Name] - write it ready to use.
                         cover_letter=job_data.get("cover_letter"),
                     )
                     db.add(user_match)
-                    await db.flush()
                 else:
                     user_match.match_score = job_data["match_score"]
                     user_match.match_reason = job_data.get("match_reason")
@@ -499,16 +521,29 @@ Do not include placeholders like [Your Name] - write it ready to use.
                     user_match.missing_skills = job_data.get("missing_skills")
                     user_match.cover_letter = job_data.get("cover_letter")
                     user_match.last_scored_at = now
+                match_rows.append((i, user_match))
 
-                current_match_ids.add(user_match.id)
+            if match_rows:
+                await db.flush()
 
-                existing_task_result = await db.execute(
+            match_ids = [user_match.id for _, user_match in match_rows]
+            existing_tasks: dict[str, DailyTask] = {}
+            if match_ids:
+                task_result = await db.execute(
                     select(DailyTask).where(
-                        DailyTask.user_job_match_id == user_match.id,
+                        DailyTask.user_job_match_id.in_(match_ids),
                         func.date(DailyTask.date) == today,
                     )
                 )
-                existing_task = existing_task_result.scalar_one_or_none()
+                existing_tasks = {
+                    task.user_job_match_id: task
+                    for task in task_result.scalars().all()
+                    if task.user_job_match_id
+                }
+
+            for i, user_match in match_rows:
+                current_match_ids.add(user_match.id)
+                existing_task = existing_tasks.get(user_match.id)
 
                 if existing_task is None:
                     task = DailyTask(
@@ -526,7 +561,6 @@ Do not include placeholders like [Your Name] - write it ready to use.
                     .where(
                         UserJobMatch.user_id == self.user_id,
                         func.date(DailyTask.date) == today,
-                        DailyTask.user_job_match_id.is_not(None),
                     )
                 )
                 for task in stale_tasks_result.scalars().all():

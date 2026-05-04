@@ -190,10 +190,11 @@ export default function Admin() {
   }
 
   async function deactivateSource(id: string) {
-    const response = await adminApi.deleteCompanySource(id)
+    const response = await adminApi.deactivateCompanySource(id)
     if (response.data) {
+      const updated = response.data
       setCompanySources((current) =>
-        current.map((source) => (source.id === id ? { ...source, is_active: false } : source))
+        current.map((source) => (source.id === id ? updated : source))
       )
       setError(null)
       if (editingSourceId === id) {

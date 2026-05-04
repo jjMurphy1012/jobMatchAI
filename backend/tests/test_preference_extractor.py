@@ -55,26 +55,3 @@ def test_merge_fields_prefers_user_overrides():
     assert effective.keywords == ["Backend", "Python"]
     assert effective.need_sponsor is True
     assert effective.remote_preference == "remote"
-
-
-def test_legacy_payload_maps_effective_fields():
-    service = PreferenceExtractorService()
-    effective = PreferenceStructuredFields(
-        keywords=["Backend", "Python"],
-        locations=["Boston, MA"],
-        is_intern=False,
-        need_sponsor=True,
-        experience_level="mid",
-        remote_preference="hybrid",
-        excluded_companies=["Meta"],
-        industries=["Fintech"],
-        salary_min=170000,
-        salary_currency="USD",
-    )
-
-    payload = service.legacy_payload(effective, "Sample profile text")
-
-    assert payload["keywords"] == "Backend, Python"
-    assert payload["location"] == "Boston, MA"
-    assert payload["job_description"] == "Sample profile text"
-    assert payload["excluded_companies"] == ["Meta"]

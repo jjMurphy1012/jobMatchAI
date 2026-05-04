@@ -350,8 +350,9 @@ def test_admin_company_source_crud_sync_and_logs(monkeypatch):
     assert logs_response.status_code == 200
     assert logs_response.json()[0]["status"] == "success"
 
-    delete_response = client.delete("/api/admin/company-sources/source-1")
-    assert delete_response.status_code == 200
+    deactivate_response = client.patch("/api/admin/company-sources/source-1/deactivate")
+    assert deactivate_response.status_code == 200
+    assert deactivate_response.json()["is_active"] is False
     assert source.is_active is False
 
 
@@ -582,7 +583,6 @@ def test_interview_experiences_are_ranked_by_company_and_keywords():
     preference = JobPreference(
         id="pref-1",
         user_id="user-1",
-        keywords="backend",
         effective_fields={
             "keywords": ["backend", "platform"],
             "locations": [],

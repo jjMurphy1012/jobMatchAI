@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 import logging
 import re
 
@@ -122,25 +122,6 @@ class PreferenceExtractorService:
             setattr(effective, field_name, value)
 
         return self._normalize_fields(effective)
-
-    def legacy_payload(self, effective: PreferenceStructuredFields, raw_text: str) -> dict[str, Any]:
-        locations = effective.locations
-        keywords = effective.keywords
-
-        return {
-            "keywords": ", ".join(keywords),
-            "location": locations[0] if locations else None,
-            "is_intern": effective.is_intern,
-            "need_sponsor": effective.need_sponsor,
-            "experience_level": effective.experience_level,
-            "job_description": raw_text,
-            "remote_preference": effective.remote_preference,
-            "excluded_companies": effective.excluded_companies,
-            "industries": effective.industries,
-            "salary_min": effective.salary_min,
-            "salary_max": effective.salary_max,
-            "salary_currency": effective.salary_currency,
-        }
 
     async def _extract_fields(self, raw_text: str) -> tuple[PreferenceStructuredFields, bool]:
         if self.structured_llm:

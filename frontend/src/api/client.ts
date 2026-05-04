@@ -107,9 +107,9 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
-  deleteCompanySource: (id: string) =>
-    fetchApi<AuthMessage>(`/api/admin/company-sources/${id}`, {
-      method: 'DELETE',
+  deactivateCompanySource: (id: string) =>
+    fetchApi<CompanySource>(`/api/admin/company-sources/${id}/deactivate`, {
+      method: 'PATCH',
     }),
   syncCompanySource: (id: string) =>
     fetchApi<SourceSyncRun>(`/api/admin/company-sources/${id}/sync`, {

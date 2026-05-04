@@ -101,7 +101,6 @@ def apply_preference_payload(
 ):
     override_payload = overrides.model_dump(exclude_unset=True)
     effective = analysis.effective_fields
-    legacy = extractor_service.legacy_payload(effective, raw_text)
 
     preference.raw_text = raw_text
     preference.extracted_fields = analysis.extracted_fields.model_dump()
@@ -111,19 +110,6 @@ def apply_preference_payload(
     preference.extraction_version = analysis.extraction_version
     preference.reminder_enabled = reminder_enabled
     preference.reminder_email = reminder_email
-
-    preference.keywords = legacy["keywords"]
-    preference.location = legacy["location"]
-    preference.is_intern = legacy["is_intern"]
-    preference.need_sponsor = legacy["need_sponsor"]
-    preference.experience_level = legacy["experience_level"]
-    preference.job_description = legacy["job_description"]
-    preference.remote_preference = legacy["remote_preference"]
-    preference.excluded_companies = legacy["excluded_companies"]
-    preference.industries = legacy["industries"]
-    preference.salary_min = legacy["salary_min"]
-    preference.salary_max = legacy["salary_max"]
-    preference.salary_currency = legacy["salary_currency"]
 
 
 @router.post("/analyze", response_model=PreferenceAnalyzeResponse)

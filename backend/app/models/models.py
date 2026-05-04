@@ -67,27 +67,12 @@ class JobPreference(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
 
-    # Legacy structured fields — kept for backfill and agent_service reads.
-    # New writers populate raw_text + effective_fields; a follow-up migration will drop these.
-    keywords = Column(Text, nullable=False)  # Comma-separated
-    location = Column(String, nullable=True)
-    is_intern = Column(Boolean, default=False)
-    need_sponsor = Column(Boolean, default=False)
-    experience_level = Column(String, nullable=True)
-    job_description = Column(Text, nullable=True)
-    remote_preference = Column(String, nullable=True)
-
     raw_text = Column(Text, nullable=True)
     extracted_fields = Column(JSON, nullable=True)
     override_fields = Column(JSON, nullable=True)
     effective_fields = Column(JSON, nullable=True)
     extracted_at = Column(DateTime(timezone=True), nullable=True)
     extraction_version = Column(String, nullable=True)
-    excluded_companies = Column(JSON, nullable=True)
-    industries = Column(JSON, nullable=True)
-    salary_min = Column(Integer, nullable=True)
-    salary_max = Column(Integer, nullable=True)
-    salary_currency = Column(String, nullable=True)
 
     reminder_enabled = Column(Boolean, default=True)
     reminder_email = Column(String, nullable=True)
@@ -96,40 +81,6 @@ class JobPreference(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="job_preferences")
-
-
-class Job(Base):
-    """Matched job positions."""
-    __tablename__ = "jobs"
-    __table_args__ = (
-        UniqueConstraint("user_id", "linkedin_job_id", name="uq_jobs_user_linkedin_job_id"),
-    )
-
-    id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
-
-    title = Column(String, nullable=False)
-    company = Column(String, nullable=False)
-    location = Column(String, nullable=True)
-    salary = Column(String, nullable=True)
-    url = Column(String, nullable=True)
-    description = Column(Text, nullable=True)
-
-    match_score = Column(Integer, nullable=False)
-    match_reason = Column(Text, nullable=True)
-    matched_skills = Column(Text, nullable=True)  # JSON-encoded list[str]
-    missing_skills = Column(Text, nullable=True)  # JSON-encoded list[str]
-
-    cover_letter = Column(Text, nullable=True)
-
-    is_applied = Column(Boolean, default=False)
-    applied_at = Column(DateTime(timezone=True), nullable=True)
-
-    searched_at = Column(DateTime(timezone=True), server_default=func.now())
-    linkedin_job_id = Column(String, nullable=True)
-
-    user = relationship("User", back_populates="jobs")
-    daily_task = relationship("DailyTask", back_populates="job", uselist=False)
 
 
 class CompanySource(Base):
@@ -288,7 +239,6 @@ class DailyTask(Base):
     __tablename__ = "daily_tasks"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    job_id = Column(String, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=True)
     user_job_match_id = Column(String, ForeignKey("user_job_matches.id", ondelete="CASCADE"), nullable=True, index=True)
 
     date = Column(DateTime(timezone=True), server_default=func.now())
@@ -296,7 +246,6 @@ class DailyTask(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     task_order = Column(Integer, nullable=False, default=0)
 
-    job = relationship("Job", back_populates="daily_task")
     user_job_match = relationship("UserJobMatch", back_populates="daily_tasks")
 
 
@@ -319,7 +268,6 @@ class User(Base):
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
     resumes = relationship("Resume", back_populates="user", cascade="all, delete-orphan")
     job_preferences = relationship("JobPreference", back_populates="user", cascade="all, delete-orphan")
-    jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
     user_job_matches = relationship("UserJobMatch", back_populates="user", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")
     created_interview_experiences = relationship(

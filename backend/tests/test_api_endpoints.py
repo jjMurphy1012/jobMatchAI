@@ -329,7 +329,7 @@ def test_preferences_analyze_returns_preview(monkeypatch):
 def test_jobs_refresh_runs_synchronously(monkeypatch):
     session = FakeJobsRefreshSession(
         Resume(user_id="user-1", file_name="resume.pdf"),
-        JobPreference(user_id="user-1", keywords="Backend"),
+        JobPreference(user_id="user-1", effective_fields={"keywords": ["Backend"]}),
     )
     user = User(id="user-1", email="user@example.com", role="user", is_disabled=False)
     app = build_app(("/api/jobs", jobs_api.router))

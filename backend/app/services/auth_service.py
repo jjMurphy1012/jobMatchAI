@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import asyncio
+import logging
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -10,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
+from app.core.database import async_session_maker
 from app.core.security import (
     TokenValidationError,
     create_access_token,
@@ -24,6 +27,8 @@ from app.models.models import AuthAccount, User, UserSession
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+SESSION_TOUCH_INTERVAL = timedelta(minutes=5)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -284,9 +289,36 @@ class AuthService:
         if session.user.is_disabled:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is disabled.")
 
-        session.last_used_at = datetime.now(timezone.utc)
-        await db.flush()
+        if self._should_touch_session(session):
+            self._schedule_session_touch(session.id)
         return session.user
+
+    def _should_touch_session(self, session: UserSession) -> bool:
+        if not session.last_used_at:
+            return True
+        last_used_at = session.last_used_at
+        if last_used_at.tzinfo is None:
+            last_used_at = last_used_at.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - last_used_at >= SESSION_TOUCH_INTERVAL
+
+    def _schedule_session_touch(self, session_id: str) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._touch_session_last_used(session_id))
+
+    async def _touch_session_last_used(self, session_id: str) -> None:
+        try:
+            async with async_session_maker() as db:
+                result = await db.execute(select(UserSession).where(UserSession.id == session_id))
+                session = result.scalar_one_or_none()
+                if not session or session.revoked_at:
+                    return
+                session.last_used_at = datetime.now(timezone.utc)
+                await db.commit()
+        except Exception:
+            logger.exception("Failed to update session last_used_at")
 
     def set_auth_cookies(self, response: Response, bundle: AuthSessionBundle) -> None:
         cookie_kwargs = {
