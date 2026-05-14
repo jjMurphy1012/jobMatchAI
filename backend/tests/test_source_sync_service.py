@@ -52,6 +52,15 @@ class FakeGreenhouseClient:
         ]
 
 
+class FakeEmbeddingService:
+    def __init__(self):
+        self.jobs = []
+
+    async def embed_jobs(self, jobs):
+        self.jobs.extend(jobs)
+        return {job["source_job_id"]: [0.1] * 1536 for job in jobs}
+
+
 @pytest.mark.asyncio
 async def test_greenhouse_sync_upserts_jobs_and_closes_missing_opportunities():
     source = CompanySource(
@@ -75,7 +84,11 @@ async def test_greenhouse_sync_upserts_jobs_and_closes_missing_opportunities():
         FakeResult(items=[]),
         FakeResult(items=[stale_opportunity]),
     )
-    service = CompanySourceSyncService(greenhouse_client=FakeGreenhouseClient())
+    embedding_service = FakeEmbeddingService()
+    service = CompanySourceSyncService(
+        greenhouse_client=FakeGreenhouseClient(),
+        embedding_service=embedding_service,
+    )
 
     run = await service.sync_company_source(session, source)
 
@@ -92,3 +105,5 @@ async def test_greenhouse_sync_upserts_jobs_and_closes_missing_opportunities():
     assert created_opportunity.company == "Acme"
     assert created_opportunity.location == "Remote"
     assert created_opportunity.description == "Build Python services."
+    assert created_opportunity.embedding == [0.1] * 1536
+    assert embedding_service.jobs[0]["source_job_id"] == "acme:123"

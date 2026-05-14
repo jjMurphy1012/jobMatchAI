@@ -141,6 +141,7 @@ class Opportunity(Base):
     url = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     raw_payload = Column(JSON, nullable=True)
+    embedding = Column(VECTOR_TYPE, nullable=True)
 
     is_open = Column(Boolean, nullable=False, default=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)

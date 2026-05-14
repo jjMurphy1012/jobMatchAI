@@ -9,9 +9,11 @@ from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
+from langchain_openai import OpenAIEmbeddings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.enums import SourceSyncStatus, SourceType
 from app.models.models import CompanySource, Opportunity, SourceSyncRun
 
@@ -157,11 +159,65 @@ class GreenhouseJobBoardClient:
         return [job for job in jobs if isinstance(job, dict)]
 
 
+class OpportunityEmbeddingService:
+    """Generate embeddings for searchable opportunity text."""
+
+    def __init__(self, embeddings: OpenAIEmbeddings | None = None) -> None:
+        self._embeddings = embeddings
+
+    @property
+    def embeddings(self) -> OpenAIEmbeddings:
+        if self._embeddings is None:
+            self._embeddings = OpenAIEmbeddings(
+                openai_api_key=settings.OPENAI_API_KEY,
+                model="text-embedding-ada-002",
+            )
+        return self._embeddings
+
+    @staticmethod
+    def build_text(job: dict[str, Any]) -> str:
+        parts = [
+            job.get("title"),
+            job.get("company"),
+            job.get("location"),
+            job.get("description"),
+        ]
+        return "\n".join(str(part).strip() for part in parts if part)[:6000]
+
+    async def embed_jobs(self, jobs: list[dict[str, Any]]) -> dict[str, list[float]]:
+        texts_by_id = {
+            job["source_job_id"]: text
+            for job in jobs
+            if (text := self.build_text(job))
+        }
+        if not texts_by_id:
+            return {}
+
+        source_job_ids = list(texts_by_id)
+        embeddings = await self.embeddings.aembed_documents([texts_by_id[job_id] for job_id in source_job_ids])
+        return dict(zip(source_job_ids, embeddings))
+
+
+def _opportunity_needs_embedding(opportunity: Opportunity, job: dict[str, Any]) -> bool:
+    return (
+        opportunity.embedding is None
+        or opportunity.title != job["title"]
+        or opportunity.company != job["company"]
+        or opportunity.location != job["location"]
+        or opportunity.description != job["description"]
+    )
+
+
 class CompanySourceSyncService:
     """Sync external company sources into the shared opportunities table."""
 
-    def __init__(self, greenhouse_client: GreenhouseJobBoardClient | None = None) -> None:
+    def __init__(
+        self,
+        greenhouse_client: GreenhouseJobBoardClient | None = None,
+        embedding_service: OpportunityEmbeddingService | None = None,
+    ) -> None:
         self.greenhouse_client = greenhouse_client or GreenhouseJobBoardClient()
+        self.embedding_service = embedding_service or OpportunityEmbeddingService()
 
     async def sync_company_source(self, db: AsyncSession, source: CompanySource) -> SourceSyncRun:
         run = SourceSyncRun(
@@ -205,10 +261,32 @@ class CompanySourceSyncService:
                     for opportunity in existing_result.scalars().all()
                 }
 
+            jobs_to_embed = [
+                job
+                for job in normalized_jobs
+                if (opportunity := existing_by_id.get(job["source_job_id"])) is None
+                or _opportunity_needs_embedding(opportunity, job)
+            ]
+            embeddings_by_source_job_id: dict[str, list[float]] = {}
+            if jobs_to_embed:
+                try:
+                    embeddings_by_source_job_id = await self.embedding_service.embed_jobs(jobs_to_embed)
+                except Exception:
+                    logger.exception("Opportunity embedding generation failed; continuing sync without embeddings")
+
             for job in normalized_jobs:
                 opportunity = existing_by_id.get(job["source_job_id"])
+                embedding = embeddings_by_source_job_id.get(job["source_job_id"])
                 if opportunity is None:
-                    db.add(Opportunity(**job, is_open=True, first_seen_at=now, last_seen_at=now))
+                    db.add(
+                        Opportunity(
+                            **job,
+                            embedding=embedding,
+                            is_open=True,
+                            first_seen_at=now,
+                            last_seen_at=now,
+                        )
+                    )
                 else:
                     opportunity.company_source_id = source.id
                     opportunity.title = job["title"]
@@ -219,6 +297,8 @@ class CompanySourceSyncService:
                     opportunity.description = job["description"]
                     opportunity.raw_payload = job["raw_payload"]
                     opportunity.posted_at = job["posted_at"] or opportunity.posted_at
+                    if embedding is not None:
+                        opportunity.embedding = embedding
                     opportunity.is_open = True
                     opportunity.last_seen_at = now
 

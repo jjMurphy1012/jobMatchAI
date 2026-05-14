@@ -62,6 +62,7 @@ def _build_preference_context(pref: JobPreference) -> dict:
 class AgentState(TypedDict):
     """State for the job matching agent."""
     resume_text: str
+    resume_embedding: Optional[List[float]]
     preferences: dict
     raw_jobs: List[dict]
     scored_jobs: List[dict]
@@ -143,6 +144,7 @@ class JobMatchingAgent:
             return {
                 **state,
                 "resume_text": resume.content or "",
+                "resume_embedding": resume.embedding,
                 "preferences": _build_preference_context(pref),
                 "threshold": settings.MATCH_THRESHOLD
             }
@@ -162,6 +164,7 @@ class JobMatchingAgent:
 
         jobs, candidate_stats = await self._load_synced_opportunities(
             prefs,
+            state.get("resume_embedding"),
             limit=max(settings.TARGET_JOBS * 3, 20),
         )
         if jobs:
@@ -191,7 +194,13 @@ class JobMatchingAgent:
             },
         }
 
-    async def _load_synced_opportunities(self, prefs: dict, limit: int) -> tuple[list[dict], dict]:
+    async def _load_synced_opportunities(
+        self,
+        prefs: dict,
+        query_embedding: list[float] | None,
+        limit: int,
+    ) -> tuple[list[dict], dict]:
+        query_vector = list(query_embedding) if query_embedding is not None else None
         async with async_session_maker() as db:
             result = await db.execute(
                 select(Opportunity)
@@ -199,11 +208,35 @@ class JobMatchingAgent:
                 .order_by(Opportunity.last_seen_at.desc(), Opportunity.updated_at.desc())
                 .limit(200)
             )
-            opportunities = result.scalars().all()
+            recent_opportunities = result.scalars().all()
+
+            vector_distances: dict[str, float] = {}
+            vector_opportunities: list[Opportunity] = []
+            if query_vector is not None:
+                distance = Opportunity.embedding.cosine_distance(query_vector).label("vector_distance")
+                vector_result = await db.execute(
+                    select(Opportunity, distance)
+                    .where(
+                        Opportunity.is_open.is_(True),
+                        Opportunity.embedding.is_not(None),
+                    )
+                    .order_by(distance, Opportunity.last_seen_at.desc(), Opportunity.updated_at.desc())
+                    .limit(max(limit * 4, 80))
+                )
+                for opportunity, vector_distance in vector_result.all():
+                    vector_opportunities.append(opportunity)
+                    if vector_distance is not None:
+                        vector_distances[opportunity.id] = float(vector_distance)
+
+        opportunities_by_id = {opportunity.id: opportunity for opportunity in vector_opportunities}
+        for opportunity in recent_opportunities:
+            opportunities_by_id.setdefault(opportunity.id, opportunity)
+        opportunities = list(opportunities_by_id.values())
 
         stats = {
             "source": "synced_opportunities",
             "open_opportunities": len(opportunities),
+            "vector_candidates": len(vector_opportunities),
             "after_hard_filters": 0,
             "after_structured_prefilter": 0,
             "scored_candidates": 0,
@@ -237,6 +270,9 @@ class JobMatchingAgent:
                 rank += 2
             if remote_preference == "remote" and "remote" in location_lower:
                 rank += 1
+            if opportunity.id in vector_distances:
+                similarity = max(0.0, 1.0 - vector_distances[opportunity.id])
+                rank += 2 + min(5, int(similarity * 5))
             if opportunity.source_type == "greenhouse":
                 rank += 1
 
@@ -603,6 +639,7 @@ Do not include placeholders like [Your Name] - write it ready to use.
             "scored_jobs": [],
             "matched_jobs": [],
             "threshold": settings.MATCH_THRESHOLD,
+            "resume_embedding": None,
             "candidate_stats": {},
             "error": None
         }
