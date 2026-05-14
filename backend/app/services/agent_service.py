@@ -1,8 +1,7 @@
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
-from typing import TypedDict, List, Optional, Annotated
-from operator import add
+from typing import TypedDict, List, Optional
 from sqlalchemy import select, func, tuple_
 from datetime import datetime, timezone
 import asyncio
@@ -68,6 +67,7 @@ class AgentState(TypedDict):
     scored_jobs: List[dict]
     matched_jobs: List[dict]
     threshold: int
+    candidate_stats: dict
     error: Optional[str]
 
 
@@ -93,7 +93,6 @@ class JobMatchingAgent:
         workflow.add_node("search_jobs", self._search_jobs)
         workflow.add_node("analyze_matches", self._analyze_matches)
         workflow.add_node("filter_and_adjust", self._filter_and_adjust)
-        workflow.add_node("generate_content", self._generate_content)
         workflow.add_node("save_results", self._save_results)
 
         # Define edges
@@ -107,13 +106,12 @@ class JobMatchingAgent:
             "filter_and_adjust",
             self._should_continue,
             {
-                "generate": "generate_content",
+                "save": "save_results",
                 "retry": "filter_and_adjust",
                 "end": END
             }
         )
 
-        workflow.add_edge("generate_content", "save_results")
         workflow.add_edge("save_results", END)
 
         return workflow.compile()
@@ -162,10 +160,13 @@ class JobMatchingAgent:
             prefs.get("is_intern"),
         )
 
-        jobs = await self._load_synced_opportunities(prefs, limit=max(settings.TARGET_JOBS * 3, 20))
+        jobs, candidate_stats = await self._load_synced_opportunities(
+            prefs,
+            limit=max(settings.TARGET_JOBS * 3, 20),
+        )
         if jobs:
             logger.info("Loaded %s synced opportunities for scoring", len(jobs))
-            return {**state, "raw_jobs": jobs}
+            return {**state, "raw_jobs": jobs, "candidate_stats": candidate_stats}
 
         logger.info("No synced opportunities available; falling back to legacy public job APIs")
         legacy_jobs = await self.linkedin_service.search_jobs(
@@ -176,9 +177,21 @@ class JobMatchingAgent:
         )
 
         logger.info("Legacy public APIs returned %s jobs", len(legacy_jobs))
-        return {**state, "raw_jobs": legacy_jobs}
+        return {
+            **state,
+            "raw_jobs": legacy_jobs,
+            "candidate_stats": {
+                "source": "legacy",
+                "open_opportunities": candidate_stats.get("open_opportunities", 0),
+                "after_hard_filters": 0,
+                "after_structured_prefilter": 0,
+                "scored_candidates": len(legacy_jobs),
+                "candidate_limit": 20,
+                "used_fallback": True,
+            },
+        }
 
-    async def _load_synced_opportunities(self, prefs: dict, limit: int) -> list[dict]:
+    async def _load_synced_opportunities(self, prefs: dict, limit: int) -> tuple[list[dict], dict]:
         async with async_session_maker() as db:
             result = await db.execute(
                 select(Opportunity)
@@ -188,6 +201,15 @@ class JobMatchingAgent:
             )
             opportunities = result.scalars().all()
 
+        stats = {
+            "source": "synced_opportunities",
+            "open_opportunities": len(opportunities),
+            "after_hard_filters": 0,
+            "after_structured_prefilter": 0,
+            "scored_candidates": 0,
+            "candidate_limit": limit,
+            "used_fallback": False,
+        }
         excluded = {company.strip().lower() for company in prefs.get("excluded_companies", []) if company.strip()}
         keywords = [keyword.strip().lower() for keyword in prefs.get("keywords", "").split(",") if keyword.strip()]
         locations = [location.strip().lower() for location in prefs.get("locations", []) if location.strip()]
@@ -197,7 +219,7 @@ class JobMatchingAgent:
         ranked: list[tuple[int, Opportunity]] = []
         for opportunity in opportunities:
             company_lower = (opportunity.company or "").lower()
-            if company_lower in excluded:
+            if company_lower in excluded or any(excluded_company in company_lower for excluded_company in excluded):
                 continue
 
             title_lower = (opportunity.title or "").lower()
@@ -220,14 +242,18 @@ class JobMatchingAgent:
 
             ranked.append((rank, opportunity))
 
+        stats["after_hard_filters"] = len(ranked)
         if keywords and ranked and max(rank for rank, _ in ranked) > 0:
             ranked = [item for item in ranked if item[0] > 0]
+        stats["after_structured_prefilter"] = len(ranked)
 
         def sort_timestamp(opportunity: Opportunity) -> float:
             value = opportunity.last_seen_at or opportunity.updated_at or opportunity.created_at
             return value.timestamp() if value else 0.0
 
         ranked.sort(key=lambda item: (item[0], sort_timestamp(item[1])), reverse=True)
+        selected = ranked[:limit]
+        stats["scored_candidates"] = len(selected)
 
         return [
             {
@@ -242,8 +268,8 @@ class JobMatchingAgent:
                 "posted_at": opportunity.posted_at,
                 "raw_payload": opportunity.raw_payload,
             }
-            for _, opportunity in ranked[:limit]
-        ]
+            for _, opportunity in selected
+        ], stats
 
     async def _analyze_matches(self, state: AgentState) -> AgentState:
         """Analyze job-resume match scores using LLM."""
@@ -355,39 +381,33 @@ JSON only, no markdown:
         threshold = state["threshold"]
         scored_jobs = state.get("scored_jobs", [])
 
-        # If we have enough matches, generate content
+        # If we have enough matches, save them without pre-generating cover letters.
         if len(matched) >= settings.TARGET_JOBS:
-            return "generate"
+            return "save"
 
         # If no scored jobs at all, just proceed with what we have
         if not scored_jobs:
-            return "generate"
+            return "save"
 
         # Check if we can still lower threshold (threshold was already lowered in filter_and_adjust)
         # If threshold hasn't changed from MIN, we've hit the bottom
         if threshold <= settings.MIN_THRESHOLD:
-            return "generate"
+            return "save"
 
         # Otherwise retry with the new (already lowered) threshold
         return "retry"
 
-    async def _generate_content(self, state: AgentState) -> AgentState:
-        """Generate cover letters for matched jobs."""
-        matched = state.get("matched_jobs", [])[:settings.TARGET_JOBS]
-        resume = state["resume_text"]
-
-        results = await asyncio.gather(
-            *(self._generate_cover_letter(resume, job) for job in matched),
-            return_exceptions=True,
+    async def generate_cover_letter_for_job(self, resume: str, user_match: UserJobMatch) -> str:
+        """Generate a cover letter for a persisted match."""
+        opportunity = user_match.opportunity
+        return await self._generate_cover_letter(
+            resume,
+            {
+                "title": opportunity.title,
+                "company": opportunity.company,
+                "match_reason": user_match.match_reason or "",
+            },
         )
-        for job, result in zip(matched, results):
-            if isinstance(result, Exception):
-                logger.error("Error generating cover letter: %s", result)
-                job["cover_letter"] = ""
-            else:
-                job["cover_letter"] = result
-
-        return {**state, "matched_jobs": matched}
 
     async def _generate_cover_letter(self, resume: str, job: dict) -> str:
         """Generate a cover letter for a job."""
@@ -519,7 +539,8 @@ Do not include placeholders like [Your Name] - write it ready to use.
                     user_match.match_reason = job_data.get("match_reason")
                     user_match.matched_skills = job_data.get("matched_skills")
                     user_match.missing_skills = job_data.get("missing_skills")
-                    user_match.cover_letter = job_data.get("cover_letter")
+                    if "cover_letter" in job_data:
+                        user_match.cover_letter = job_data.get("cover_letter")
                     user_match.last_scored_at = now
                 match_rows.append((i, user_match))
 
@@ -582,6 +603,7 @@ Do not include placeholders like [Your Name] - write it ready to use.
             "scored_jobs": [],
             "matched_jobs": [],
             "threshold": settings.MATCH_THRESHOLD,
+            "candidate_stats": {},
             "error": None
         }
 
@@ -602,6 +624,7 @@ Do not include placeholders like [Your Name] - write it ready to use.
                 "final_threshold": final_state.get("threshold"),
                 "used_synced_opportunities": bool(source_counts.get("greenhouse")),
                 "source_counts": source_counts,
+                "candidate_stats": final_state.get("candidate_stats", {}),
             }
         except Exception as e:
             logger.error(f"Agent workflow error: {e}")

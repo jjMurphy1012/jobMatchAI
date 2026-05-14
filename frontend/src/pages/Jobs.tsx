@@ -29,7 +29,10 @@ export default function Jobs() {
 
       queryClient.invalidateQueries({ queryKey: ['jobs'] })
       const jobsFound = result.data?.jobs_found ?? 0
-      alert(`Search complete. The AI found ${jobsFound} matched position${jobsFound === 1 ? '' : 's'}.`)
+      const stats = result.data?.candidate_stats
+      const scored = typeof stats?.scored_candidates === 'number' ? stats.scored_candidates : undefined
+      const suffix = scored !== undefined ? ` Scored ${scored} candidate${scored === 1 ? '' : 's'}.` : ''
+      alert(`Search complete. The AI found ${jobsFound} matched position${jobsFound === 1 ? '' : 's'}.${suffix}`)
     },
     onError: (error: any) => {
       console.error('Search failed:', error)
@@ -112,7 +115,10 @@ export default function Jobs() {
                   isExpanded={expandedJob === job.id}
                   onToggleExpand={() => toggleExpand(job.id)}
                 >
-                  <JobDetails job={job} />
+                  <JobDetails
+                    job={job}
+                    onCoverLetterGenerated={() => queryClient.invalidateQueries({ queryKey: ['jobs'] })}
+                  />
                 </JobCard>
               ))}
             </AnimatePresence>

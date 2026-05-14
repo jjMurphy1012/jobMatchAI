@@ -348,6 +348,7 @@ def test_jobs_refresh_runs_synchronously(monkeypatch):
             "final_threshold": 65,
             "used_synced_opportunities": True,
             "source_counts": {"greenhouse": 4},
+            "candidate_stats": {"scored_candidates": 12},
         }
 
     app.dependency_overrides[get_db] = override_db
@@ -365,4 +366,5 @@ def test_jobs_refresh_runs_synchronously(monkeypatch):
         "final_threshold": 65,
         "used_synced_opportunities": True,
         "source_counts": {"greenhouse": 4},
+        "candidate_stats": {"scored_candidates": 12},
     }

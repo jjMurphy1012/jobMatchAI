@@ -499,6 +499,60 @@ def test_jobs_list_detail_and_apply():
     assert session.committed is True
 
 
+def test_jobs_generate_cover_letter_on_demand(monkeypatch):
+    user = User(id="user-1", email="user@example.com", role="user", is_disabled=False)
+    resume = Resume(user_id="user-1", file_name="resume.pdf", content="Python backend resume")
+    opportunity = Opportunity(
+        id="opp-1",
+        source_type="greenhouse",
+        source_job_id="gh-1",
+        title="Backend Engineer",
+        company="Airbnb",
+        location="Remote",
+        description="Backend role",
+    )
+    user_match = UserJobMatch(
+        id="match-1",
+        user_id="user-1",
+        opportunity_id="opp-1",
+        opportunity=opportunity,
+        match_score=91,
+        match_reason="Strong Python backend fit",
+    )
+    session = QueueSession(
+        FakeResult(value=user_match),
+        FakeResult(value=resume),
+    )
+    app = build_app(("/api/jobs", jobs_api.router))
+
+    async def override_db():
+        yield session
+
+    async def override_user():
+        return user
+
+    class FakeAgent:
+        def __init__(self, user_id: str):
+            assert user_id == "user-1"
+
+        async def generate_cover_letter_for_job(self, resume_text: str, match: UserJobMatch) -> str:
+            assert resume_text == "Python backend resume"
+            assert match.id == "match-1"
+            return "Generated cover letter"
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = override_user
+    monkeypatch.setattr(jobs_api, "JobMatchingAgent", FakeAgent)
+
+    client = TestClient(app)
+    response = client.post("/api/jobs/match-1/cover-letter")
+
+    assert response.status_code == 200
+    assert response.json() == {"job_id": "match-1", "cover_letter": "Generated cover letter"}
+    assert user_match.cover_letter == "Generated cover letter"
+    assert session.committed is True
+
+
 def test_tasks_list_complete_uncomplete_and_stats():
     user = User(id="user-1", email="user@example.com", role="user", is_disabled=False)
     opportunity = Opportunity(

@@ -1,20 +1,41 @@
 import { motion } from 'framer-motion'
-import { Copy, Check, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Copy, Check, Sparkles, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { useState } from 'react'
-import { JobResponse } from '../../api/client'
+import { JobResponse, jobsApi } from '../../api/client'
 
 interface JobDetailsProps {
   job: JobResponse
+  onCoverLetterGenerated?: (jobId: string, coverLetter: string) => void
 }
 
-export function JobDetails({ job }: JobDetailsProps) {
+export function JobDetails({ job, onCoverLetterGenerated }: JobDetailsProps) {
   const [copied, setCopied] = useState(false)
+  const [coverLetter, setCoverLetter] = useState(job.cover_letter || '')
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState('')
 
   const copyToClipboard = async () => {
-    if (job.cover_letter) {
-      await navigator.clipboard.writeText(job.cover_letter)
+    if (coverLetter) {
+      await navigator.clipboard.writeText(coverLetter)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const generateCoverLetter = async () => {
+    setIsGenerating(true)
+    setError('')
+    try {
+      const result = await jobsApi.generateCoverLetter(job.id)
+      if (result.error || !result.data) {
+        throw new Error(result.error || 'Unable to generate cover letter')
+      }
+      setCoverLetter(result.data.cover_letter)
+      onCoverLetterGenerated?.(job.id, result.data.cover_letter)
+    } catch (err: any) {
+      setError(err.message || 'Unable to generate cover letter')
+    } finally {
+      setIsGenerating(false)
     }
   }
 
@@ -101,28 +122,44 @@ export function JobDetails({ job }: JobDetailsProps) {
         </div>
 
         {/* Cover Letter Section */}
-        {job.cover_letter && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-slate-800 text-sm">AI Generated Cover Letter</h4>
+        <div className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h4 className="font-semibold text-slate-800 text-sm">AI Generated Cover Letter</h4>
+            {coverLetter ? (
               <button
                 onClick={copyToClipboard}
-                className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
                 {copied ? 'Copied!' : 'Copy to Clipboard'}
               </button>
-            </div>
+            ) : (
+              <button
+                onClick={generateCoverLetter}
+                disabled={isGenerating}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {isGenerating ? 'Generating...' : 'Generate'}
+              </button>
+            )}
+          </div>
+          {error && (
+            <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+              {error}
+            </p>
+          )}
+          {coverLetter && (
             <div className="relative group">
               <div className="absolute -inset-0.5 rounded-[1.5rem] bg-gradient-to-r from-primary/15 to-emerald-200/40 blur opacity-40 transition duration-500 group-hover:opacity-60"></div>
               <div className="relative rounded-[1.35rem] border border-slate-200 bg-white p-6 shadow-sm">
                 <p className="text-slate-600 text-sm whitespace-pre-wrap leading-relaxed font-mono">
-                  {job.cover_letter}
+                  {coverLetter}
                 </p>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </motion.div>
   )

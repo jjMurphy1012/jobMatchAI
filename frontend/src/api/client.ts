@@ -180,6 +180,9 @@ export const jobsApi = {
 
   refresh: () => fetchApi<JobRefreshResponse>('/api/jobs/refresh', { method: 'POST' }),
 
+  generateCoverLetter: (id: string) =>
+    fetchApi<CoverLetterResponse>(`/api/jobs/${id}/cover-letter`, { method: 'POST' }),
+
   markApplied: (id: string) =>
     fetchApi(`/api/jobs/${id}/apply`, { method: 'PUT' }),
 }
@@ -403,6 +406,12 @@ export interface JobRefreshResponse {
   final_threshold?: number;
   used_synced_opportunities: boolean;
   source_counts: Record<string, number>;
+  candidate_stats: Record<string, number | string | boolean>;
+}
+
+export interface CoverLetterResponse {
+  job_id: string;
+  cover_letter: string;
 }
 
 export interface DailyTask {

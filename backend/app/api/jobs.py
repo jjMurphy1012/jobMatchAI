@@ -52,6 +52,12 @@ class JobRefreshResponse(BaseModel):
     final_threshold: Optional[int] = None
     used_synced_opportunities: bool = False
     source_counts: dict[str, int] = Field(default_factory=dict)
+    candidate_stats: dict[str, int | str | bool] = Field(default_factory=dict)
+
+
+class CoverLetterResponse(BaseModel):
+    job_id: str
+    cover_letter: str
 
 
 def _build_job_response(user_match: UserJobMatch) -> JobResponse:
@@ -176,6 +182,7 @@ async def refresh_jobs(
         final_threshold=result.get("final_threshold"),
         used_synced_opportunities=result.get("used_synced_opportunities", False),
         source_counts=result.get("source_counts", {}),
+        candidate_stats=result.get("candidate_stats", {}),
     )
 
 
@@ -187,6 +194,43 @@ async def run_job_search(user_id: str):
     except Exception as e:
         logger.exception("Job search error for user %s", user_id)
         return {"success": False, "error": str(e)}
+
+
+@router.post("/{job_id}/cover-letter", response_model=CoverLetterResponse)
+async def generate_cover_letter(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate and persist a cover letter for a matched job on demand."""
+    match_result = await db.execute(
+        select(UserJobMatch)
+        .options(selectinload(UserJobMatch.opportunity))
+        .where(UserJobMatch.id == job_id, UserJobMatch.user_id == current_user.id)
+    )
+    user_match = match_result.scalar_one_or_none()
+    if not user_match:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if user_match.cover_letter:
+        return CoverLetterResponse(job_id=user_match.id, cover_letter=user_match.cover_letter)
+
+    resume_result = await db.execute(
+        select(Resume)
+        .where(Resume.user_id == current_user.id)
+        .order_by(Resume.uploaded_at.desc())
+        .limit(1)
+    )
+    resume = resume_result.scalar_one_or_none()
+    if not resume:
+        raise HTTPException(status_code=400, detail="Please upload a resume first")
+
+    agent = JobMatchingAgent(user_id=current_user.id)
+    cover_letter = await agent.generate_cover_letter_for_job(resume.content or "", user_match)
+    user_match.cover_letter = cover_letter
+    await db.commit()
+
+    return CoverLetterResponse(job_id=user_match.id, cover_letter=cover_letter)
 
 
 @router.put("/{job_id}/apply")
