@@ -59,6 +59,40 @@ def _build_preference_context(pref: JobPreference) -> dict:
     }
 
 
+def _extract_json_payload(content: str):
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    object_start = content.find("{")
+    array_start = content.find("[")
+
+    if object_start != -1 and (array_start == -1 or object_start < array_start):
+        object_end = content.rfind("}") + 1
+        if object_end > object_start:
+            return json.loads(content[object_start:object_end])
+
+    array_end = content.rfind("]") + 1
+    if array_start != -1 and array_end > array_start:
+        return json.loads(content[array_start:array_end])
+
+    if object_start != -1:
+        object_end = content.rfind("}") + 1
+        return json.loads(content[object_start:object_end])
+
+    raise json.JSONDecodeError("No JSON payload found", content, 0)
+
+
+def _normalize_score_item(item: dict) -> dict:
+    return {
+        "score": int(item.get("score", 0) or 0),
+        "reason": item.get("reason", "") or "",
+        "matched_skills": item.get("matched_skills", []) or [],
+        "missing_skills": item.get("missing_skills", []) or [],
+    }
+
+
 class AgentState(TypedDict):
     """State for the job matching agent."""
     resume_text: str
@@ -318,27 +352,123 @@ class JobMatchingAgent:
 
         resume = state["resume_text"]
         profile_text = state.get("preferences", {}).get("profile_text", "")
+        rerank_limit = max(settings.TARGET_JOBS, settings.MATCH_LLM_RERANK_LIMIT)
+        batch_size = max(1, settings.MATCH_LLM_BATCH_SIZE)
+        candidate_jobs = raw_jobs[:rerank_limit]
+        batches = [
+            candidate_jobs[index:index + batch_size]
+            for index in range(0, len(candidate_jobs), batch_size)
+        ]
 
-        results = await asyncio.gather(
-            *(self._score_job(resume, profile_text, job) for job in raw_jobs),
+        results_by_batch = await asyncio.gather(
+            *(self._score_job_batch(resume, profile_text, batch) for batch in batches),
             return_exceptions=True,
         )
 
         scored_jobs = []
-        for job, score_data in zip(raw_jobs, results):
-            if isinstance(score_data, Exception):
-                logger.error("Error scoring job %s: %s", job.get("title"), score_data)
-                continue
-            scored_jobs.append({
-                **job,
-                "match_score": score_data.get("score", 0),
-                "match_reason": score_data.get("reason", ""),
-                "matched_skills": json.dumps(score_data.get("matched_skills", [])),
-                "missing_skills": json.dumps(score_data.get("missing_skills", [])),
-            })
+        for batch, batch_result in zip(batches, results_by_batch):
+            if isinstance(batch_result, Exception):
+                logger.error("Error scoring job batch: %s", batch_result)
+                fallback_results = await asyncio.gather(
+                    *(self._score_job(resume, profile_text, job) for job in batch),
+                    return_exceptions=True,
+                )
+                batch_scores = []
+                for job, fallback_score in zip(batch, fallback_results):
+                    if isinstance(fallback_score, Exception):
+                        logger.error("Error scoring job %s: %s", job.get("title"), fallback_score)
+                        continue
+                    batch_scores.append((job, fallback_score))
+            else:
+                batch_scores = list(zip(batch, batch_result))
 
+            for job, score_data in batch_scores:
+                if isinstance(score_data, Exception):
+                    logger.error("Error scoring job %s: %s", job.get("title"), score_data)
+                    continue
+                scored_jobs.append({
+                    **job,
+                    "match_score": score_data.get("score", 0),
+                    "match_reason": score_data.get("reason", ""),
+                    "matched_skills": json.dumps(score_data.get("matched_skills", [])),
+                    "missing_skills": json.dumps(score_data.get("missing_skills", [])),
+                })
+
+        candidate_stats = {
+            **state.get("candidate_stats", {}),
+            "llm_rerank_limit": rerank_limit,
+            "llm_scored_candidates": len(candidate_jobs),
+            "llm_batch_size": batch_size,
+            "llm_batches": len(batches),
+        }
         scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
-        return {**state, "scored_jobs": scored_jobs}
+        return {**state, "scored_jobs": scored_jobs, "candidate_stats": candidate_stats}
+
+    async def _score_job_batch(self, resume: str, profile_text: str, jobs: list[dict]) -> list[dict]:
+        """Score a batch of candidate jobs against the resume."""
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are a career advisor ranking job-resume fit. Be objective and precise."),
+            ("human", """
+Analyze the match between this resume and each job posting.
+
+RESUME:
+{resume}
+
+JOB SEARCH PROFILE:
+{profile_text}
+
+JOBS JSON:
+{jobs_json}
+
+Return a JSON array. Each item must include:
+- index: original job index from JOBS JSON
+- score: 0-100 match score
+- reason: 1-2 sentence explanation
+- matched_skills: list of matching skills
+- missing_skills: list of required but missing skills
+
+JSON array only, no markdown:
+""")
+        ])
+
+        jobs_for_prompt = [
+            {
+                "index": index,
+                "title": job.get("title", ""),
+                "company": job.get("company", ""),
+                "location": job.get("location", ""),
+                "description": (job.get("description") or "")[:1200],
+            }
+            for index, job in enumerate(jobs)
+        ]
+        chain = prompt | self.llm
+        response = await chain.ainvoke({
+            "resume": resume[:3000],
+            "profile_text": profile_text[:1500],
+            "jobs_json": json.dumps(jobs_for_prompt),
+        })
+
+        parsed = _extract_json_payload(response.content)
+        if isinstance(parsed, dict):
+            parsed = parsed.get("results") or parsed.get("jobs") or []
+        if not isinstance(parsed, list):
+            raise ValueError("Batch scorer returned non-list JSON")
+
+        score_by_index = {}
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            index = item.get("index")
+            if isinstance(index, int) and 0 <= index < len(jobs):
+                score_by_index[index] = _normalize_score_item(item)
+
+        return [
+            score_by_index.get(
+                index,
+                {"score": 0, "reason": "Unable to analyze", "matched_skills": [], "missing_skills": []},
+            )
+            for index in range(len(jobs))
+        ]
 
     async def _score_job(self, resume: str, profile_text: str, job: dict) -> dict:
         """Score a single job against the resume."""
@@ -380,14 +510,8 @@ JSON only, no markdown:
 
         # Parse JSON response
         try:
-            return json.loads(response.content)
-        except json.JSONDecodeError:
-            # Try to extract JSON from response
-            content = response.content
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start != -1 and end > start:
-                return json.loads(content[start:end])
+            return _normalize_score_item(_extract_json_payload(response.content))
+        except (json.JSONDecodeError, ValueError):
             return {"score": 50, "reason": "Unable to analyze", "matched_skills": [], "missing_skills": []}
 
     async def _filter_and_adjust(self, state: AgentState) -> AgentState:

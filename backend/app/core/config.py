@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     MIN_THRESHOLD: int = 30
     THRESHOLD_STEP: int = 5
     TARGET_JOBS: int = 10
+    MATCH_LLM_RERANK_LIMIT: int = 20
+    MATCH_LLM_BATCH_SIZE: int = 10
 
     # Data Retention
     DATA_RETENTION_DAYS: int = 7
