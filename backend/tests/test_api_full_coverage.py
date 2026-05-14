@@ -787,13 +787,22 @@ def test_admin_interview_experience_crud():
             "summary": "Updated summary for backend-focused interview prep.",
             "source_url": "https://example.com/google",
             "source_site": "Blind",
-            "review_status": "draft",
+            "review_status": "needs_review",
             "relevance_keywords": ["backend"],
         },
     )
     assert update_response.status_code == 200
     assert existing.role == "Senior Backend Engineer"
-    assert existing.review_status == "draft"
+    assert existing.review_status == "needs_review"
+    assert existing.reviewed_by_user_id is None
+
+    status_response = client.patch(
+        "/api/admin/interview-experiences/exp-1/status",
+        json={"review_status": "published"},
+    )
+    assert status_response.status_code == 200
+    assert existing.review_status == "published"
+    assert existing.reviewed_by_user_id == "admin-1"
 
     delete_response = client.delete("/api/admin/interview-experiences/exp-1")
     assert delete_response.status_code == 200

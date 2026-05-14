@@ -106,6 +106,27 @@ class InterviewExperienceUpsertRequest(BaseModel):
     relevance_keywords: list[str] = Field(default_factory=list)
 
 
+class InterviewExperienceStatusRequest(BaseModel):
+    review_status: str
+
+
+def _validate_review_status(review_status: str) -> str:
+    if review_status not in REVIEW_STATUSES:
+        allowed = ", ".join(sorted(REVIEW_STATUSES))
+        raise HTTPException(status_code=400, detail=f"review_status must be one of: {allowed}.")
+    return review_status
+
+
+def _apply_review_status(experience: InterviewExperience, review_status: str, admin: User) -> None:
+    experience.review_status = review_status
+    if review_status == ReviewStatus.PUBLISHED:
+        experience.reviewed_by_user_id = admin.id
+        experience.reviewed_at = datetime.now(timezone.utc)
+    elif review_status in {ReviewStatus.DRAFT, ReviewStatus.NEEDS_REVIEW, ReviewStatus.REJECTED}:
+        experience.reviewed_by_user_id = None
+        experience.reviewed_at = None
+
+
 def _apply_experience_payload(
     experience: InterviewExperience,
     payload: InterviewExperienceUpsertRequest,
@@ -122,11 +143,8 @@ def _apply_experience_payload(
     experience.summary = payload.summary.strip()
     experience.source_url = payload.source_url
     experience.source_site = payload.source_site.strip() if payload.source_site else None
-    experience.review_status = payload.review_status
     experience.relevance_keywords = [kw.strip() for kw in payload.relevance_keywords if kw.strip()]
-    is_published = payload.review_status == ReviewStatus.PUBLISHED
-    experience.reviewed_by_user_id = admin.id if is_published else None
-    experience.reviewed_at = datetime.now(timezone.utc) if is_published else None
+    _apply_review_status(experience, payload.review_status, admin)
 
 
 def _validate_source_type(source_type: str) -> str:
@@ -309,11 +327,17 @@ async def list_source_sync_runs(
 
 @router.get("/interview-experiences", response_model=list[AdminInterviewExperienceResponse])
 async def list_interview_experiences(
+    review_status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    filters = []
+    if review_status:
+        filters.append(InterviewExperience.review_status == _validate_review_status(review_status))
+
     result = await db.execute(
         select(InterviewExperience)
+        .where(*filters)
         .order_by(InterviewExperience.updated_at.desc(), InterviewExperience.created_at.desc())
     )
     return [
@@ -332,8 +356,7 @@ async def create_interview_experience(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(require_admin),
 ):
-    if payload.review_status not in REVIEW_STATUSES:
-        raise HTTPException(status_code=400, detail="review_status must be 'draft' or 'published'.")
+    payload.review_status = _validate_review_status(payload.review_status)
 
     experience = InterviewExperience(id=str(uuid4()), created_by_user_id=current_admin.id)
     _apply_experience_payload(experience, payload, current_admin)
@@ -349,8 +372,7 @@ async def update_interview_experience(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(require_admin),
 ):
-    if payload.review_status not in REVIEW_STATUSES:
-        raise HTTPException(status_code=400, detail="review_status must be 'draft' or 'published'.")
+    payload.review_status = _validate_review_status(payload.review_status)
 
     result = await db.execute(select(InterviewExperience).where(InterviewExperience.id == experience_id))
     experience = result.scalar_one_or_none()
@@ -358,6 +380,24 @@ async def update_interview_experience(
         raise HTTPException(status_code=404, detail="Interview experience not found.")
 
     _apply_experience_payload(experience, payload, current_admin)
+    await db.flush()
+    return AdminInterviewExperienceResponse.model_validate(experience)
+
+
+@router.patch("/interview-experiences/{experience_id}/status", response_model=AdminInterviewExperienceResponse)
+async def update_interview_experience_status(
+    experience_id: str,
+    payload: InterviewExperienceStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    review_status = _validate_review_status(payload.review_status)
+    result = await db.execute(select(InterviewExperience).where(InterviewExperience.id == experience_id))
+    experience = result.scalar_one_or_none()
+    if not experience:
+        raise HTTPException(status_code=404, detail="Interview experience not found.")
+
+    _apply_review_status(experience, review_status, current_admin)
     await db.flush()
     return AdminInterviewExperienceResponse.model_validate(experience)
 

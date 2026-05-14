@@ -8,6 +8,7 @@ import {
   AdminUser,
   CompanySource,
   CompanySourcePayload,
+  InterviewReviewStatus,
   SourceSyncRun,
 } from '../api/client'
 import { useAuth } from '../components/auth/AuthProvider'
@@ -21,6 +22,14 @@ type ExperienceFormState = Omit<AdminInterviewExperiencePayload, 'topics' | 'rel
 }
 
 type SourceFormState = CompanySourcePayload
+type ExperienceStatusFilter = InterviewReviewStatus | 'all'
+
+const reviewStatusOptions: { value: InterviewReviewStatus; label: string }[] = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'needs_review', label: 'Needs review' },
+  { value: 'published', label: 'Published' },
+  { value: 'rejected', label: 'Rejected' },
+]
 
 const emptyExperienceForm: ExperienceFormState = {
   company_name: '',
@@ -50,6 +59,13 @@ function splitCsv(value: string) {
     .filter(Boolean)
 }
 
+function reviewStatusBadgeVariant(status: InterviewReviewStatus): 'success' | 'warning' | 'destructive' | 'secondary' {
+  if (status === 'published') return 'success'
+  if (status === 'needs_review') return 'warning'
+  if (status === 'rejected') return 'destructive'
+  return 'secondary'
+}
+
 export default function Admin() {
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -67,13 +83,19 @@ export default function Admin() {
   const [savingExperience, setSavingExperience] = useState(false)
   const [deletingExperienceId, setDeletingExperienceId] = useState<string | null>(null)
   const [editingExperienceId, setEditingExperienceId] = useState<string | null>(null)
+  const [experienceStatusFilter, setExperienceStatusFilter] = useState<ExperienceStatusFilter>('all')
+  const [updatingExperienceStatusId, setUpdatingExperienceStatusId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sourceForm, setSourceForm] = useState<SourceFormState>(emptySourceForm)
   const [experienceForm, setExperienceForm] = useState<ExperienceFormState>(emptyExperienceForm)
 
   useEffect(() => {
-    void Promise.all([loadUsers(), loadCompanySources(), loadSyncRuns(), loadExperiences()])
+    void Promise.all([loadUsers(), loadCompanySources(), loadSyncRuns()])
   }, [])
+
+  useEffect(() => {
+    void loadExperiences()
+  }, [experienceStatusFilter])
 
   const adminsCount = useMemo(() => users.filter((item) => item.role === 'admin').length, [users])
   const activeSourceCount = useMemo(
@@ -82,6 +104,10 @@ export default function Admin() {
   )
   const publishedCount = useMemo(
     () => experiences.filter((item) => item.review_status === 'published').length,
+    [experiences]
+  )
+  const needsReviewCount = useMemo(
+    () => experiences.filter((item) => item.review_status === 'needs_review').length,
     [experiences]
   )
 
@@ -123,7 +149,7 @@ export default function Admin() {
 
   async function loadExperiences() {
     setLoadingExperiences(true)
-    const response = await adminApi.listInterviewExperiences()
+    const response = await adminApi.listInterviewExperiences(experienceStatusFilter)
     if (response.data) {
       setExperiences(response.data)
       setError(null)
@@ -285,6 +311,26 @@ export default function Admin() {
     setDeletingExperienceId(null)
   }
 
+  async function changeExperienceStatus(id: string, reviewStatus: InterviewReviewStatus) {
+    setUpdatingExperienceStatusId(id)
+    const response = await adminApi.updateInterviewExperienceStatus(id, reviewStatus)
+    if (response.data) {
+      setExperiences((current) => {
+        const updated = current.map((item) => (item.id === id ? response.data! : item))
+        return experienceStatusFilter === 'all'
+          ? updated
+          : updated.filter((item) => item.review_status === experienceStatusFilter)
+      })
+      setError(null)
+      if (editingExperienceId === id) {
+        startEditExperience(response.data)
+      }
+    } else {
+      setError(response.error || 'Unable to update interview experience status.')
+    }
+    setUpdatingExperienceStatusId(null)
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-8">
       <section className="page-shell overflow-hidden p-8 sm:p-10">
@@ -335,6 +381,7 @@ export default function Admin() {
           <CardHeader className="pb-2">
             <CardDescription>Interview experiences</CardDescription>
             <CardTitle className="text-3xl">{publishedCount} published</CardTitle>
+            <p className="text-xs font-medium text-slate-500">{needsReviewCount} needs review</p>
           </CardHeader>
         </Card>
       </div>
@@ -766,10 +813,13 @@ export default function Admin() {
               <select
                 className="input"
                 value={experienceForm.review_status}
-                onChange={(event) => setExperienceForm((current) => ({ ...current, review_status: event.target.value as 'draft' | 'published' }))}
+                onChange={(event) => setExperienceForm((current) => ({ ...current, review_status: event.target.value as InterviewReviewStatus }))}
               >
-                <option value="draft">draft</option>
-                <option value="published">published</option>
+                {reviewStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -787,10 +837,29 @@ export default function Admin() {
 
       <Card className="border-white/80 bg-white/92">
         <CardHeader>
-          <CardTitle className="text-xl">Interview library</CardTitle>
-          <CardDescription>
-            Published items will appear in the user-facing Interview Prep page. Drafts stay here until you publish them.
-          </CardDescription>
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <CardTitle className="text-xl">Interview library</CardTitle>
+              <CardDescription>
+                Published items will appear in the user-facing Interview Prep page. Drafts stay here until you publish them.
+              </CardDescription>
+            </div>
+            <label className="grid gap-2 text-sm text-slate-700 md:min-w-56">
+              Status filter
+              <select
+                className="input"
+                value={experienceStatusFilter}
+                onChange={(event) => setExperienceStatusFilter(event.target.value as ExperienceStatusFilter)}
+              >
+                <option value="all">All statuses</option>
+                {reviewStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {loadingExperiences ? (
@@ -807,7 +876,7 @@ export default function Admin() {
               {experiences.map((experience) => (
                 <div key={experience.id} className="surface-soft rounded-[1.5rem] p-5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={experience.review_status === 'published' ? 'success' : 'secondary'}>
+                    <Badge variant={reviewStatusBadgeVariant(experience.review_status)}>
                       {experience.review_status}
                     </Badge>
                     <Badge variant="outline">{experience.company_name}</Badge>
@@ -825,7 +894,37 @@ export default function Admin() {
                       </Badge>
                     ))}
                   </div>
-                  <div className="mt-5 flex items-center justify-between gap-3">
+                  <div className="mt-5 flex flex-wrap items-center gap-2">
+                    {experience.review_status !== 'published' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={updatingExperienceStatusId === experience.id}
+                        onClick={() => void changeExperienceStatus(experience.id, 'published')}
+                      >
+                        Publish
+                      </Button>
+                    )}
+                    {experience.review_status !== 'needs_review' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={updatingExperienceStatusId === experience.id}
+                        onClick={() => void changeExperienceStatus(experience.id, 'needs_review')}
+                      >
+                        Review
+                      </Button>
+                    )}
+                    {experience.review_status !== 'rejected' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={updatingExperienceStatusId === experience.id}
+                        onClick={() => void changeExperienceStatus(experience.id, 'rejected')}
+                      >
+                        Reject
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => startEditExperience(experience)}>
                       Edit
                     </Button>

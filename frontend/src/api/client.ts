@@ -117,8 +117,10 @@ export const adminApi = {
     }),
   listSourceSyncRuns: (limit = 20) =>
     fetchApi<SourceSyncRun[]>(`/api/admin/source-sync-runs?limit=${limit}`),
-  listInterviewExperiences: () =>
-    fetchApi<AdminInterviewExperience[]>('/api/admin/interview-experiences'),
+  listInterviewExperiences: (reviewStatus?: InterviewReviewStatus | 'all') => {
+    const query = reviewStatus && reviewStatus !== 'all' ? `?review_status=${reviewStatus}` : ''
+    return fetchApi<AdminInterviewExperience[]>(`/api/admin/interview-experiences${query}`)
+  },
   createInterviewExperience: (payload: AdminInterviewExperiencePayload) =>
     fetchApi<AdminInterviewExperience>('/api/admin/interview-experiences', {
       method: 'POST',
@@ -128,6 +130,11 @@ export const adminApi = {
     fetchApi<AdminInterviewExperience>(`/api/admin/interview-experiences/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    }),
+  updateInterviewExperienceStatus: (id: string, reviewStatus: InterviewReviewStatus) =>
+    fetchApi<AdminInterviewExperience>(`/api/admin/interview-experiences/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ review_status: reviewStatus }),
     }),
   deleteInterviewExperience: (id: string) =>
     fetchApi<AuthMessage>(`/api/admin/interview-experiences/${id}`, {
@@ -279,7 +286,7 @@ export interface AdminInterviewExperience {
   summary: string;
   source_url?: string;
   source_site?: string;
-  review_status: 'draft' | 'published';
+  review_status: InterviewReviewStatus;
   relevance_keywords: string[];
   created_by_user_id?: string;
   reviewed_by_user_id?: string;
@@ -298,9 +305,11 @@ export interface AdminInterviewExperiencePayload {
   summary: string;
   source_url?: string | null;
   source_site?: string | null;
-  review_status: 'draft' | 'published';
+  review_status: InterviewReviewStatus;
   relevance_keywords: string[];
 }
+
+export type InterviewReviewStatus = 'draft' | 'needs_review' | 'published' | 'rejected';
 
 export interface ResumeResponse {
   id: string;

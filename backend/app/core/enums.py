@@ -23,10 +23,17 @@ APPLIED_STATUSES: Final = frozenset({
 
 class ReviewStatus:
     DRAFT: Final = "draft"
+    NEEDS_REVIEW: Final = "needs_review"
     PUBLISHED: Final = "published"
+    REJECTED: Final = "rejected"
 
 
-REVIEW_STATUSES: Final = frozenset({ReviewStatus.DRAFT, ReviewStatus.PUBLISHED})
+REVIEW_STATUSES: Final = frozenset({
+    ReviewStatus.DRAFT,
+    ReviewStatus.NEEDS_REVIEW,
+    ReviewStatus.PUBLISHED,
+    ReviewStatus.REJECTED,
+})
 
 
 class UserRole:
