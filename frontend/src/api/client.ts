@@ -207,8 +207,16 @@ export const tasksApi = {
 }
 
 export const interviewExperiencesApi = {
-  list: (limit = 12) =>
-    fetchApi<InterviewExperience[]>(`/api/interview-experiences?limit=${limit}`),
+  list: (filters: InterviewExperienceFilters = {}) => {
+    const params = new URLSearchParams()
+    params.set('limit', String(filters.limit ?? 12))
+    if (filters.company) params.set('company', filters.company)
+    if (filters.role) params.set('role', filters.role)
+    if (filters.level) params.set('level', filters.level)
+    if (filters.topic) params.set('topic', filters.topic)
+    if (filters.year) params.set('year', String(filters.year))
+    return fetchApi<InterviewExperience[]>(`/api/interview-experiences?${params.toString()}`)
+  },
 }
 
 export interface AuthMessage {
@@ -475,4 +483,13 @@ export interface InterviewExperience {
   source_site?: string;
   relevance_score: number;
   matched_company: boolean;
+}
+
+export interface InterviewExperienceFilters {
+  limit?: number;
+  company?: string;
+  role?: string;
+  level?: string;
+  topic?: string;
+  year?: number;
 }

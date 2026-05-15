@@ -717,6 +717,16 @@ def test_interview_experiences_are_ranked_by_company_and_keywords():
     assert body[0]["matched_company"] is True
     assert all(item["company_name"] != "Amazon" for item in body)
 
+    session.results.extend([
+        FakeResult(value=preference),
+        FakeResult(items=[google_match]),
+        FakeResult(items=[google_exp, meta_exp]),
+    ])
+    filtered_response = client.get("/api/interview-experiences?company=Meta&role=platform&topic=behavioral")
+
+    assert filtered_response.status_code == 200
+    assert [item["company_name"] for item in filtered_response.json()] == ["Meta"]
+
 
 def test_admin_interview_experience_crud():
     admin_user = User(id="admin-1", email="admin@example.com", role="admin", is_disabled=False)

@@ -34,6 +34,17 @@ def _tokenize_text(*parts: object) -> set[str]:
     return tokens
 
 
+def _contains_ci(value: str | None, needle: str | None) -> bool:
+    return not needle or (value is not None and needle.strip().lower() in value.lower())
+
+
+def _matches_topic(experience: InterviewExperience, topic: str | None) -> bool:
+    if not topic:
+        return True
+    topic_lower = topic.strip().lower()
+    return any(topic_lower in str(item).lower() for item in (experience.topics or []))
+
+
 class InterviewExperienceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,6 +65,11 @@ class InterviewExperienceResponse(BaseModel):
 @router.get("", response_model=list[InterviewExperienceResponse])
 async def list_relevant_interview_experiences(
     limit: int = 12,
+    company: Optional[str] = None,
+    role: Optional[str] = None,
+    level: Optional[str] = None,
+    topic: Optional[str] = None,
+    year: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -87,13 +103,25 @@ async def list_relevant_interview_experiences(
 
     # Hard cap keeps the Python-side ranking pass bounded; swap to FTS/relevance_index
     # when the curated set outgrows this.
+    filters = [InterviewExperience.review_status == ReviewStatus.PUBLISHED]
+    if company:
+        filters.append(InterviewExperience.company_name_normalized == normalize_company(company))
+    if year:
+        filters.append(InterviewExperience.year == year)
+
     result = await db.execute(
         select(InterviewExperience)
-        .where(InterviewExperience.review_status == ReviewStatus.PUBLISHED)
+        .where(*filters)
         .order_by(InterviewExperience.updated_at.desc(), InterviewExperience.created_at.desc())
         .limit(500)
     )
-    experiences = result.scalars().all()
+    experiences = [
+        experience
+        for experience in result.scalars().all()
+        if _contains_ci(experience.role, role)
+        and _contains_ci(experience.level, level)
+        and _matches_topic(experience, topic)
+    ]
 
     ranked: list[tuple[int, bool, InterviewExperience]] = []
     for experience in experiences:

@@ -6,8 +6,25 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 
+interface Filters {
+  company: string
+  role: string
+  level: string
+  topic: string
+  year: string
+}
+
+const emptyFilters: Filters = {
+  company: '',
+  role: '',
+  level: '',
+  topic: '',
+  year: '',
+}
+
 export default function InterviewPrep() {
   const [experiences, setExperiences] = useState<InterviewExperience[]>([])
+  const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -15,10 +32,17 @@ export default function InterviewPrep() {
     void loadExperiences()
   }, [])
 
-  async function loadExperiences() {
+  async function loadExperiences(nextFilters = filters) {
     setLoading(true)
     setError(null)
-    const response = await interviewExperiencesApi.list(12)
+    const response = await interviewExperiencesApi.list({
+      limit: 12,
+      company: nextFilters.company.trim() || undefined,
+      role: nextFilters.role.trim() || undefined,
+      level: nextFilters.level.trim() || undefined,
+      topic: nextFilters.topic.trim() || undefined,
+      year: nextFilters.year ? Number(nextFilters.year) : undefined,
+    })
     if (response.data) {
       setExperiences(response.data)
     } else {
@@ -47,6 +71,72 @@ export default function InterviewPrep() {
           </Button>
         </div>
       </section>
+
+      <Card className="border-white/80 bg-white/92">
+        <CardHeader>
+          <CardTitle className="text-xl">Filters</CardTitle>
+          <CardDescription>Focus the prep library by company, role, seniority, topic, or year.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-5">
+            <label className="grid gap-2 text-sm text-slate-700">
+              Company
+              <input
+                className="input"
+                value={filters.company}
+                onChange={(event) => setFilters((current) => ({ ...current, company: event.target.value }))}
+              />
+            </label>
+            <label className="grid gap-2 text-sm text-slate-700">
+              Role
+              <input
+                className="input"
+                value={filters.role}
+                onChange={(event) => setFilters((current) => ({ ...current, role: event.target.value }))}
+              />
+            </label>
+            <label className="grid gap-2 text-sm text-slate-700">
+              Level
+              <input
+                className="input"
+                value={filters.level}
+                onChange={(event) => setFilters((current) => ({ ...current, level: event.target.value }))}
+              />
+            </label>
+            <label className="grid gap-2 text-sm text-slate-700">
+              Topic
+              <input
+                className="input"
+                value={filters.topic}
+                onChange={(event) => setFilters((current) => ({ ...current, topic: event.target.value }))}
+              />
+            </label>
+            <label className="grid gap-2 text-sm text-slate-700">
+              Year
+              <input
+                className="input"
+                type="number"
+                value={filters.year}
+                onChange={(event) => setFilters((current) => ({ ...current, year: event.target.value }))}
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => void loadExperiences()} disabled={loading}>
+              Apply filters
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFilters(emptyFilters)
+                void loadExperiences(emptyFilters)
+              }}
+            >
+              Reset
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="surface-soft">
