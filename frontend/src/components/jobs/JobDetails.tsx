@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Copy, Check, Sparkles, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
+import { Copy, Check, Sparkles, AlertCircle, CheckCircle2, Loader2, ExternalLink, BookOpen } from 'lucide-react'
 import { useState } from 'react'
 import { JobResponse, jobsApi } from '../../api/client'
 
@@ -50,6 +50,7 @@ export function JobDetails({ job, onCoverLetterGenerated }: JobDetailsProps) {
 
   const matchedSkills = parseSkills(job.matched_skills)
   const missingSkills = parseSkills(job.missing_skills)
+  const relatedInterviews = job.related_interviews ?? []
 
   return (
     <motion.div
@@ -120,6 +121,65 @@ export function JobDetails({ job, onCoverLetterGenerated }: JobDetailsProps) {
             </div>
           </div>
         </div>
+
+        {relatedInterviews.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <BookOpen className="h-4 w-4 text-primary" />
+              <h4>Related Interview Prep</h4>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {relatedInterviews.map((experience) => (
+                <div key={experience.id} className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                      {experience.company_name}
+                    </span>
+                    {experience.level && (
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        {experience.level}
+                      </span>
+                    )}
+                    {experience.year && (
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        {experience.year}
+                      </span>
+                    )}
+                  </div>
+                  <h5 className="mt-3 text-sm font-semibold text-slate-900">{experience.role}</h5>
+                  <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">{experience.summary}</p>
+                  {experience.topics.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {experience.topics.slice(0, 3).map((topic) => (
+                        <span key={topic} className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(experience.source_url || experience.source_site) && (
+                    <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        {experience.source_site || 'Source'}
+                      </span>
+                      {experience.source_url && (
+                        <a
+                          href={experience.source_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary/80"
+                        >
+                          Open
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Cover Letter Section */}
         <div className="space-y-3">

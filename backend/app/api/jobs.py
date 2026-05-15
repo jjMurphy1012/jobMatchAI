@@ -11,12 +11,26 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.core.enums import APPLIED_STATUSES, ApplicationStatus
-from app.models.models import Application, JobPreference, Resume, User, UserJobMatch
+from app.core.enums import APPLIED_STATUSES, ApplicationStatus, ReviewStatus
+from app.core.text import normalize_company
+from app.models.models import Application, InterviewExperience, JobPreference, Opportunity, Resume, User, UserJobMatch
 from app.services.agent_service import JobMatchingAgent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+class RelatedInterviewExperienceResponse(BaseModel):
+    id: str
+    company_name: str
+    role: str
+    level: Optional[str]
+    year: Optional[int]
+    topics: list[str]
+    summary: str
+    source_url: Optional[str]
+    source_site: Optional[str]
+    relevance_score: int
 
 
 class JobResponse(BaseModel):
@@ -38,6 +52,7 @@ class JobResponse(BaseModel):
     is_applied: bool
     searched_at: str
     application_status: Optional[str] = None
+    related_interviews: list[RelatedInterviewExperienceResponse] = Field(default_factory=list)
 
 class JobListResponse(BaseModel):
     jobs: List[JobResponse]
@@ -60,7 +75,85 @@ class CoverLetterResponse(BaseModel):
     cover_letter: str
 
 
-def _build_job_response(user_match: UserJobMatch) -> JobResponse:
+def _tokenize_text(*parts: object) -> set[str]:
+    tokens: set[str] = set()
+    for part in parts:
+        if isinstance(part, list):
+            for item in part:
+                tokens.update(_tokenize_text(item))
+            continue
+        if not part:
+            continue
+        for raw in str(part).replace("/", " ").replace(",", " ").replace("-", " ").split():
+            token = raw.strip().lower()
+            if len(token) >= 2:
+                tokens.add(token)
+    return tokens
+
+
+def _build_related_interview_response(
+    experience: InterviewExperience,
+    relevance_score: int,
+) -> RelatedInterviewExperienceResponse:
+    return RelatedInterviewExperienceResponse(
+        id=experience.id,
+        company_name=experience.company_name,
+        role=experience.role,
+        level=experience.level,
+        year=experience.year,
+        topics=list(experience.topics or []),
+        summary=experience.summary,
+        source_url=experience.source_url,
+        source_site=experience.source_site,
+        relevance_score=relevance_score,
+    )
+
+
+def _sort_timestamp(value: datetime | None) -> float:
+    return value.timestamp() if value else 0.0
+
+
+async def _load_related_interviews(
+    db: AsyncSession,
+    opportunity: Opportunity,
+    limit: int = 3,
+) -> list[RelatedInterviewExperienceResponse]:
+    result = await db.execute(
+        select(InterviewExperience)
+        .where(InterviewExperience.review_status == ReviewStatus.PUBLISHED)
+        .order_by(InterviewExperience.updated_at.desc(), InterviewExperience.created_at.desc())
+        .limit(100)
+    )
+    experiences = result.scalars().all()
+    company_normalized = normalize_company(opportunity.company)
+    title_tokens = _tokenize_text(opportunity.title)
+
+    ranked: list[tuple[int, InterviewExperience]] = []
+    for experience in experiences:
+        company_match = experience.company_name_normalized == company_normalized
+        role_overlap = len(title_tokens & _tokenize_text(experience.role, experience.relevance_keywords or []))
+        if not company_match and role_overlap == 0:
+            continue
+        score = (100 if company_match else 0) + role_overlap * 10
+        ranked.append((score, experience))
+
+    ranked.sort(
+        key=lambda item: (
+            item[0],
+            _sort_timestamp(item[1].updated_at or item[1].created_at),
+        ),
+        reverse=True,
+    )
+    return [
+        _build_related_interview_response(experience, score)
+        for score, experience in ranked[:limit]
+    ]
+
+
+def _build_job_response(
+    user_match: UserJobMatch,
+    related_interviews: Optional[list[RelatedInterviewExperienceResponse]] = None,
+) -> JobResponse:
     opportunity = user_match.opportunity
     application = user_match.application
     searched_at = user_match.last_scored_at or user_match.created_at
@@ -82,6 +175,7 @@ def _build_job_response(user_match: UserJobMatch) -> JobResponse:
         is_applied=bool(application and application.status in APPLIED_STATUSES),
         searched_at=searched_at.isoformat() if searched_at else "",
         application_status=application.status if application else None,
+        related_interviews=related_interviews or [],
     )
 
 
@@ -153,7 +247,8 @@ async def get_job_detail(
     if not user_match:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    return _build_job_response(user_match)
+    related_interviews = await _load_related_interviews(db, user_match.opportunity)
+    return _build_job_response(user_match, related_interviews=related_interviews)
 
 
 @router.post("/refresh", response_model=JobRefreshResponse)

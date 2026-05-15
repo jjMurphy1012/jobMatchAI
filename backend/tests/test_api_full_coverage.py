@@ -459,11 +459,22 @@ def test_jobs_list_detail_and_apply():
         cover_letter="Dear hiring team",
         last_scored_at=datetime.now(timezone.utc),
     )
+    related_experience = InterviewExperience(
+        id="exp-1",
+        company_name="Acme",
+        company_name_normalized="acme",
+        role="Backend Engineer",
+        review_status="published",
+        topics=["System Design"],
+        summary="Backend interview loop with system design.",
+        relevance_keywords=["backend"],
+    )
     session = QueueSession(
         FakeResult(items=[user_match]),
         FakeResult(value=1),
         FakeResult(value=user_match.last_scored_at),
         FakeResult(value=user_match),
+        FakeResult(items=[related_experience]),
         FakeResult(value=user_match),
     )
     app = build_app(("/api/jobs", jobs_api.router))
@@ -492,6 +503,8 @@ def test_jobs_list_detail_and_apply():
     detail_response = client.get("/api/jobs/match-1")
     assert detail_response.status_code == 200
     assert detail_response.json()["company"] == "Acme"
+    assert detail_response.json()["related_interviews"][0]["company_name"] == "Acme"
+    assert detail_response.json()["related_interviews"][0]["relevance_score"] >= 100
 
     apply_response = client.put("/api/jobs/match-1/apply")
     assert apply_response.status_code == 200

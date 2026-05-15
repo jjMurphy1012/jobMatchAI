@@ -408,6 +408,20 @@ export interface JobResponse {
   is_applied: boolean;
   searched_at: string;
   application_status?: string;
+  related_interviews: JobRelatedInterviewExperience[];
+}
+
+export interface JobRelatedInterviewExperience {
+  id: string;
+  company_name: string;
+  role: string;
+  level?: string;
+  year?: number;
+  topics: string[];
+  summary: string;
+  source_url?: string;
+  source_site?: string;
+  relevance_score: number;
 }
 
 export interface JobListResponse {
