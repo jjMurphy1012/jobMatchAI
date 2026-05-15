@@ -1,338 +1,267 @@
-# Job Matching AI
+# JobMatchAI
 
-An intelligent job matching and recommendation system powered by **LangChain**, **LangGraph**, and **RAG** (Retrieval-Augmented Generation). The system automatically searches for relevant job positions, analyzes resume-job compatibility using AI, generates personalized cover letters, and delivers daily job recommendations.
+AI-assisted job matching for resume-driven job search. The app stores resumes in Supabase Storage, keeps structured career profile data, syncs real company jobs from Greenhouse into PostgreSQL, ranks opportunities with pgvector + OpenAI, and supports interview prep content managed by admins.
 
-> **Live Demo**: [https://welcoming-mindfulness-production-e40c.up.railway.app](https://welcoming-mindfulness-production-e40c.up.railway.app)
+## Current Features
 
----
+- Google OAuth login
+- Email registration and login
+- Cookie-based access and refresh sessions
+- `admin` and `user` roles
+- Resume upload, replace, download, and delete
+- Supabase Storage resume backend
+- Career Profile free-text input with AI field extraction
+- Manual Match refresh
+- Greenhouse company source configuration and sync
+- Opportunity storage in PostgreSQL
+- pgvector embeddings for resumes and opportunities
+- Structured prefilter + vector recall + batched LLM reranking
+- Match list/detail with skill fit and apply state
+- Cover letter generation on demand
+- Daily Tasks based on current matches
+- Interview Prep library
+- Admin user management
+- Admin Greenhouse source management
+- Admin interview experience CRUD, review workflow, JSON import, filters
 
-## Screenshots
+## Main User Flow
 
-### Dashboard Overview
-Track your daily application goals and job matching progress at a glance.
-
-![Overview Dashboard](docs/screenshots/overview.png)
-
-### AI-Powered Job Matching
-View AI-curated job opportunities with match scores, skill analysis, and personalized recommendations.
-
-![Matched Jobs](docs/screenshots/matched-jobs.png)
-
-### Resume Profile
-Upload your PDF resume for AI-powered parsing and job matching.
-
-![Resume Upload](docs/screenshots/resume-profile.png)
-
-### Job Preferences
-Configure your job search criteria including keywords, location, job type, and work preferences.
-
-![Preferences](docs/screenshots/preferences.png)
-
-### Backend Deployment (Railway)
-Real-time deployment logs showing the FastAPI backend with LangGraph agent workflow.
-
-![Railway Deployment](docs/screenshots/railway-logs.png)
-
----
-
-## Features
-
-- **Smart Resume Parsing**: Upload PDF resumes with automatic text extraction and semantic vectorization using OpenAI Embeddings
-- **AI-Powered Job Matching**: LangGraph-based multi-step agent analyzes job-resume compatibility with adaptive threshold scoring
-- **Personalized Cover Letters**: Auto-generated cover letters tailored to each job description using GPT-4o-mini
-- **Skill Gap Analysis**: Identifies your strengths and skills to develop for each position
-- **Daily Job Recommendations**: Scheduled job searches with email notifications at 7:00 AM EST
-- **Interactive Task Dashboard**: Track daily application progress with completion status and motivational feedback
-- **RAG Integration**: PostgreSQL with pgvector for persistent vector storage and semantic search
-- **Mobile Responsive**: Fully responsive design with hamburger menu for mobile devices
-
----
+1. User signs in with Google or email.
+2. User uploads a PDF resume.
+3. User fills Career Profile in natural language.
+4. Admin configures Greenhouse company sources and syncs jobs.
+5. User clicks `Run Match`.
+6. Backend ranks synced opportunities and creates matches/tasks.
+7. User opens a match, reviews fit, related interview prep, and generates a cover letter only when needed.
 
 ## Tech Stack
 
-### Backend
-| Technology | Purpose |
-|------------|---------|
-| FastAPI | Async Python web framework |
-| LangChain | RAG pipeline and LLM orchestration |
-| LangGraph | Multi-step AI agent with state management |
-| PostgreSQL + pgvector | Relational database with vector storage |
-| SQLAlchemy | Async ORM for database operations |
-| APScheduler | Cron-based task scheduling |
-| OpenAI API | GPT-4o-mini for analysis and generation |
+Backend:
+- FastAPI
+- SQLAlchemy async
+- Alembic
+- PostgreSQL + pgvector
+- Supabase Storage
+- OpenAI embeddings and GPT ranking
+- LangChain / LangGraph
 
-### Frontend
-| Technology | Purpose |
-|------------|---------|
-| React 18 | UI framework with hooks |
-| TypeScript | Type-safe development |
-| Tailwind CSS | Utility-first styling with glassmorphism design |
-| Vite | Fast build tool and dev server |
-| React Router | Client-side routing |
-| Lucide Icons | Modern icon library |
+Frontend:
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- React Router
 
-### Infrastructure
-| Technology | Purpose |
-|------------|---------|
-| Docker | Containerization |
-| Railway | Cloud deployment platform |
-| Supabase | PostgreSQL with pgvector hosting |
-| SendGrid | Email notification service (optional) |
+Infrastructure:
+- Railway backend and frontend services
+- Supabase Postgres and Storage
+- GitHub auto-deploy
 
----
+## Local Development
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Job Matching AI System                        │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────────┐         ┌──────────────────────────────────────┐ │
-│  │   Frontend   │   API   │              Backend                 │ │
-│  │    (React)   │◄───────►│            (FastAPI)                 │ │
-│  └──────────────┘         │                                      │ │
-│                           │  ┌────────────┐    ┌──────────────┐  │ │
-│                           │  │ LangGraph  │    │ RAG System   │  │ │
-│                           │  │   Agent    │◄──►│ (LangChain)  │  │ │
-│                           │  └─────┬──────┘    └──────────────┘  │ │
-│                           │        │                              │ │
-│                           │        ▼                              │ │
-│                           │  ┌────────────┐    ┌──────────────┐  │ │
-│                           │  │  Job APIs  │    │   OpenAI     │  │ │
-│                           │  │ (Remotive) │    │  GPT-4o-mini │  │ │
-│                           │  └────────────┘    └──────────────┘  │ │
-│                           └──────────────────────────────────────┘ │
-│                                        │                           │
-│                           ┌────────────▼────────────┐              │
-│                           │  PostgreSQL + pgvector  │              │
-│                           │       (Supabase)        │              │
-│                           └─────────────────────────┘              │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## LangGraph Agent Workflow
-
-```
-START
-  │
-  ▼
-┌─────────────────┐
-│ Fetch Resume    │  ← RAG retrieval from pgvector
-│ + Preferences   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Search Jobs     │  ← Remotive + Arbeitnow APIs
-│ (20 positions)  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Analyze Match   │  ← GPT-4o-mini scoring
-│ (per job)       │    + skill gap analysis
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐     ┌─────────────────┐
-│ Score >= 70?    │─No─►│ Lower threshold │
-│ Count >= 10?    │     │ (70→65→60→...)  │
-└────────┬────────┘     └────────┬────────┘
-         │ Yes                   │
-         ▼                       │
-┌─────────────────┐◄─────────────┘
-│ Generate Cover  │
-│ Letters         │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Save & Create   │  ← Daily tasks created
-│ Daily Tasks     │
-└────────┬────────┘
-         │
-         ▼
-        END
-```
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL 15+ with pgvector extension (or Supabase account)
-- OpenAI API Key
-
-### Environment Variables
+Backend:
 
 ```bash
-# Backend (.env)
-OPENAI_API_KEY=sk-xxx
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname
-
-# Frontend (.env)
-VITE_API_URL=http://localhost:8000
-```
-
-### Local Development
-
-```bash
-# Clone repository
-git clone https://github.com/jjMurphy1012/jobMatchAI.git
-cd jobMatchAI
-
-# Backend setup
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
+alembic -c alembic.ini upgrade head
 uvicorn app.main:app --reload
+```
 
-# Frontend setup (new terminal)
+Frontend:
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### Docker Development
+Local URLs:
+- Frontend: `http://localhost:5173`
+- Backend health: `http://localhost:8000/health`
+- Backend docs: `http://localhost:8000/docs`
+
+## Required Environment
+
+Minimum backend variables:
 
 ```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
+DATABASE_URL=postgresql+asyncpg://...
+JWT_SECRET_KEY=change-this
+OPENAI_API_KEY=sk-...
+FRONTEND_URL=http://localhost:5173
+BACKEND_CORS_ORIGINS=http://localhost:5173
 ```
 
----
-
-## Deployment (Railway + Supabase)
-
-### 1. Database Setup (Supabase)
-
-1. Create a new project at [supabase.com](https://supabase.com)
-2. Enable pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
-3. Copy the Session Pooler connection string (port 5432)
-
-### 2. Backend Deployment (Railway)
-
-1. Connect your GitHub repository to Railway
-2. Set Root Directory to `/backend`
-3. Add environment variables:
-   - `DATABASE_URL` - Supabase connection string (with `postgresql+asyncpg://` prefix)
-   - `OPENAI_API_KEY` - Your OpenAI API key
-4. Railway auto-deploys on git push
-
-### 3. Frontend Deployment (Railway)
-
-1. Create another service in Railway
-2. Set Root Directory to `/frontend`
-3. Add environment variable:
-   - `VITE_API_URL` - Your backend Railway URL
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/resume` | Upload PDF resume |
-| GET | `/api/resume` | Get parsed resume |
-| DELETE | `/api/resume` | Delete resume |
-| POST | `/api/preferences` | Set job preferences |
-| GET | `/api/preferences` | Get job preferences |
-| GET | `/api/jobs` | Get matched jobs |
-| POST | `/api/jobs/refresh` | Trigger manual search |
-| PUT | `/api/jobs/:id/apply` | Mark job as applied |
-| GET | `/api/daily-tasks` | Get today's tasks |
-| PUT | `/api/daily-tasks/:id/complete` | Mark task complete |
-| GET | `/api/daily-tasks/stats` | Get completion stats |
-
----
-
-## Configuration
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `MATCH_THRESHOLD` | 70 | Initial matching score threshold |
-| `MIN_THRESHOLD` | 30 | Minimum threshold floor |
-| `TARGET_JOBS` | 10 | Target number of daily recommendations |
-| `DATA_RETENTION_DAYS` | 7 | Days to retain job data |
-| `PUSH_TIME` | 7:00 AM EST | Daily notification time |
-
----
-
-## Project Structure
-
-```
-job-matching-ai/
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI entry point
-│   │   ├── api/                 # API routes
-│   │   ├── models/              # SQLAlchemy models
-│   │   ├── services/
-│   │   │   ├── rag_service.py   # RAG implementation
-│   │   │   ├── agent_service.py # LangGraph agent
-│   │   │   ├── linkedin_service.py  # Job search APIs
-│   │   │   └── scheduler_service.py
-│   │   └── core/                # Config, database
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/
-│   ├── src/
-│   │   ├── pages/               # React pages
-│   │   ├── components/          # UI components
-│   │   └── api/                 # API client
-│   ├── package.json
-│   └── Dockerfile
-├── docs/
-│   └── screenshots/             # Project screenshots
-├── docker-compose.yml
-└── README.md
-```
-
----
-
-## Development Notes
-
-### MCP Integration (Local Development)
-
-For local development and testing, we utilized the Model Context Protocol (MCP) to integrate LinkedIn job search capabilities directly within the Claude Code development environment:
+Recommended production variables:
 
 ```bash
-# Add LinkedIn MCP server
-claude mcp add linkedin --transport stdio \
-  --env LINKEDIN_EMAIL=your-email \
-  --env LINKEDIN_PASSWORD=your-password \
-  -- uvx --from git+https://github.com/adhikasp/mcp-linkedin mcp-linkedin
+STORAGE_BACKEND=supabase
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_RESUME_BUCKET=resumes
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://your-frontend-domain/api/auth/google/callback
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_SAMESITE=lax
+ADMIN_EMAILS=admin@example.com
 ```
 
-### Claude Code Integration
+Full reference:
+- [Environment Variables](docs/ENVIRONMENT.md)
+- [Auth Setup](docs/AUTH.md)
+- [Railway Deployment](RAILWAY_DEPLOYMENT.md)
 
-This project was developed with assistance from **Claude Code** (Anthropic's AI coding assistant), demonstrating:
-- Rapid prototyping with AI pair programming
-- MCP server integration for external API testing
-- Automated code review and debugging
+## OpenAI Key
 
----
+Yes, the backend needs `OPENAI_API_KEY` for the full product:
+- Resume embedding
+- Career Profile extraction
+- Opportunity embedding during Greenhouse sync
+- Match LLM reranking
+- Cover letter generation
 
-## License
+Without a key, auth and basic CRUD may still start, but resume processing, sync embeddings, matching, and cover letters will fail or degrade.
 
-MIT License - see [LICENSE](LICENSE) for details.
+## Database Migrations
 
----
+Alembic is used for schema management.
 
-## Contributing
+Local:
 
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+```bash
+cd backend
+alembic -c alembic.ini upgrade head
+```
+
+Railway:
+- The backend Dockerfile runs `alembic -c alembic.ini upgrade head` before Uvicorn starts.
+- You can confirm current DB revision in Supabase:
+
+```sql
+select version_num from alembic_version;
+```
+
+## Greenhouse Sync
+
+Admins configure company sources in Admin:
+- `source_type`: `greenhouse`
+- `company_name`: display name
+- `board_token`: Greenhouse board token, for example `airbnb`
+
+Sync behavior:
+- Fetches Greenhouse Job Board API
+- Upserts jobs into `opportunities`
+- Marks missing jobs closed
+- Stores sync logs
+- Generates opportunity embeddings when possible
+
+## Matching Pipeline
+
+Current pipeline:
+
+1. Load latest resume and Career Profile effective fields.
+2. Load open synced opportunities.
+3. Use structured filters for company exclusions, internship intent, keywords, location, and remote preference.
+4. Use resume embedding to recall opportunity embeddings.
+5. Rank candidates and keep a bounded top-N.
+6. Batch LLM rerank candidates.
+7. Save `UserJobMatch` rows and Daily Tasks.
+8. Generate cover letter only when user clicks `Generate`.
+
+Default knobs:
+
+```bash
+MATCH_THRESHOLD=70
+MIN_THRESHOLD=30
+THRESHOLD_STEP=5
+TARGET_JOBS=10
+MATCH_LLM_RERANK_LIMIT=20
+MATCH_LLM_BATCH_SIZE=10
+```
+
+## API Overview
+
+Auth:
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `POST /api/auth/refresh`
+- `GET /api/auth/me`
+- `GET /api/auth/google/login`
+- `GET /api/auth/google/callback`
+
+Resume:
+- `GET /api/resume`
+- `POST /api/resume`
+- `DELETE /api/resume`
+
+Career Profile:
+- `GET /api/preferences`
+- `POST /api/preferences`
+- `POST /api/preferences/analyze`
+- `PATCH /api/preferences/fields`
+
+Matches:
+- `GET /api/jobs`
+- `GET /api/jobs/{id}`
+- `POST /api/jobs/refresh`
+- `POST /api/jobs/{id}/cover-letter`
+- `PUT /api/jobs/{id}/apply`
+
+Interview Prep:
+- `GET /api/interview-experiences`
+
+Admin:
+- `GET /api/admin/users`
+- `PATCH /api/admin/users/{id}/role`
+- `GET /api/admin/company-sources`
+- `POST /api/admin/company-sources`
+- `PATCH /api/admin/company-sources/{id}`
+- `PATCH /api/admin/company-sources/{id}/deactivate`
+- `POST /api/admin/company-sources/{id}/sync`
+- `GET /api/admin/source-sync-runs`
+- `GET /api/admin/interview-experiences`
+- `POST /api/admin/interview-experiences`
+- `POST /api/admin/interview-experiences/import`
+- `PATCH /api/admin/interview-experiences/{id}`
+- `PATCH /api/admin/interview-experiences/{id}/status`
+- `DELETE /api/admin/interview-experiences/{id}`
+
+## Scheduler
+
+Scheduler is intentionally disabled by default:
+
+```bash
+ENABLE_SCHEDULER=false
+```
+
+Only enable it on a dedicated scheduler/worker instance later:
+
+```bash
+ENABLE_SCHEDULER=true
+```
+
+Do not enable scheduler on every web replica.
+
+## Status
+
+Completed:
+- P0 infrastructure and profile refactor
+- P1 Auth/RBAC/stability
+- P2 core data model and IA
+- P2.5 frontend visual consistency
+- P3 Greenhouse integration
+- P4 matching pipeline upgrade
+- P5 interview prep workflow, filters, match association, import
+
+Deferred:
+- Forgot Password
+- Email verification strategy
+- Dedicated scheduler/worker
+- Redis/arq evaluation
+- Monitoring, audit logs, email notifications
