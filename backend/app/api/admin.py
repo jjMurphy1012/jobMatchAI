@@ -110,6 +110,15 @@ class InterviewExperienceStatusRequest(BaseModel):
     review_status: str
 
 
+class InterviewExperienceImportRequest(BaseModel):
+    items: list[InterviewExperienceUpsertRequest] = Field(min_length=1, max_length=100)
+
+
+class InterviewExperienceImportResponse(BaseModel):
+    imported_count: int
+    experiences: list[AdminInterviewExperienceResponse]
+
+
 def _validate_review_status(review_status: str) -> str:
     if review_status not in REVIEW_STATUSES:
         allowed = ", ".join(sorted(REVIEW_STATUSES))
@@ -363,6 +372,34 @@ async def create_interview_experience(
     db.add(experience)
     await db.flush()
     return AdminInterviewExperienceResponse.model_validate(experience)
+
+
+@router.post(
+    "/interview-experiences/import",
+    response_model=InterviewExperienceImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_interview_experiences(
+    payload: InterviewExperienceImportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    imported: list[InterviewExperience] = []
+    for item in payload.items:
+        item.review_status = _validate_review_status(item.review_status)
+        experience = InterviewExperience(id=str(uuid4()), created_by_user_id=current_admin.id)
+        _apply_experience_payload(experience, item, current_admin)
+        db.add(experience)
+        imported.append(experience)
+
+    await db.flush()
+    return InterviewExperienceImportResponse(
+        imported_count=len(imported),
+        experiences=[
+            AdminInterviewExperienceResponse.model_validate(experience)
+            for experience in imported
+        ],
+    )
 
 
 @router.patch("/interview-experiences/{experience_id}", response_model=AdminInterviewExperienceResponse)

@@ -81,6 +81,7 @@ export default function Admin() {
   const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null)
   const [editingSourceId, setEditingSourceId] = useState<string | null>(null)
   const [savingExperience, setSavingExperience] = useState(false)
+  const [importingExperiences, setImportingExperiences] = useState(false)
   const [deletingExperienceId, setDeletingExperienceId] = useState<string | null>(null)
   const [editingExperienceId, setEditingExperienceId] = useState<string | null>(null)
   const [experienceStatusFilter, setExperienceStatusFilter] = useState<ExperienceStatusFilter>('all')
@@ -88,6 +89,7 @@ export default function Admin() {
   const [error, setError] = useState<string | null>(null)
   const [sourceForm, setSourceForm] = useState<SourceFormState>(emptySourceForm)
   const [experienceForm, setExperienceForm] = useState<ExperienceFormState>(emptyExperienceForm)
+  const [experienceImportJson, setExperienceImportJson] = useState('')
 
   useEffect(() => {
     void Promise.all([loadUsers(), loadCompanySources(), loadSyncRuns()])
@@ -331,6 +333,30 @@ export default function Admin() {
     setUpdatingExperienceStatusId(null)
   }
 
+  async function importExperiences() {
+    setImportingExperiences(true)
+    try {
+      const parsed = JSON.parse(experienceImportJson)
+      const items = Array.isArray(parsed) ? parsed : parsed.items
+      if (!Array.isArray(items)) {
+        setError('Import JSON must be an array or an object with an items array.')
+        return
+      }
+      const response = await adminApi.importInterviewExperiences(items as AdminInterviewExperiencePayload[])
+      if (response.data) {
+        setError(null)
+        setExperienceImportJson('')
+        await loadExperiences()
+      } else {
+        setError(response.error || 'Unable to import interview experiences.')
+      }
+    } catch {
+      setError('Import JSON is not valid.')
+    } finally {
+      setImportingExperiences(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-8">
       <section className="page-shell overflow-hidden p-8 sm:p-10">
@@ -385,6 +411,34 @@ export default function Admin() {
           </CardHeader>
         </Card>
       </div>
+
+      <Card className="border-white/80 bg-white/92">
+        <CardHeader>
+          <CardTitle className="text-xl">Import interview experiences</CardTitle>
+          <CardDescription>
+            Paste a JSON array of interview experience entries. Imported entries should usually start as needs_review.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <textarea
+            className="input min-h-[180px] rounded-[1.5rem] py-3 font-mono text-xs"
+            placeholder='[{"company_name":"Airbnb","role":"Backend Engineer","summary":"...", "review_status":"needs_review","topics":["System Design"],"relevance_keywords":["backend"]}]'
+            value={experienceImportJson}
+            onChange={(event) => setExperienceImportJson(event.target.value)}
+          />
+          <div className="flex flex-wrap gap-3">
+            <Button
+              onClick={() => void importExperiences()}
+              disabled={importingExperiences || !experienceImportJson.trim()}
+            >
+              {importingExperiences ? 'Importing...' : 'Import JSON'}
+            </Button>
+            <Button variant="outline" onClick={() => setExperienceImportJson('')}>
+              Clear
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-white/80 bg-white/92">
         <CardHeader>

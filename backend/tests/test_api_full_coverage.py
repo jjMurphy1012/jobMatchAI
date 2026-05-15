@@ -798,6 +798,32 @@ def test_admin_interview_experience_crud():
     assert created.company_name_normalized == "netflix"
     assert created.reviewed_by_user_id == "admin-1"
 
+    import_response = client.post(
+        "/api/admin/interview-experiences/import",
+        json={
+            "items": [
+                {
+                    "company_name": "Airbnb",
+                    "role": "Backend Engineer",
+                    "level": "mid",
+                    "year": 2026,
+                    "rounds": "Coding and system design",
+                    "topics": ["System Design"],
+                    "summary": "Imported interview note focused on backend systems.",
+                    "source_url": "https://example.com/airbnb",
+                    "source_site": "Import",
+                    "review_status": "needs_review",
+                    "relevance_keywords": ["backend"],
+                }
+            ]
+        },
+    )
+    assert import_response.status_code == 201
+    assert import_response.json()["imported_count"] == 1
+    imported = session.added[-1]
+    assert imported.company_name_normalized == "airbnb"
+    assert imported.review_status == "needs_review"
+
     update_response = client.patch(
         "/api/admin/interview-experiences/exp-1",
         json={

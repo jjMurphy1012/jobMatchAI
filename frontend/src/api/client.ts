@@ -136,6 +136,11 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify({ review_status: reviewStatus }),
     }),
+  importInterviewExperiences: (items: AdminInterviewExperiencePayload[]) =>
+    fetchApi<AdminInterviewExperienceImportResponse>('/api/admin/interview-experiences/import', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    }),
   deleteInterviewExperience: (id: string) =>
     fetchApi<AuthMessage>(`/api/admin/interview-experiences/${id}`, {
       method: 'DELETE',
@@ -315,6 +320,11 @@ export interface AdminInterviewExperiencePayload {
   source_site?: string | null;
   review_status: InterviewReviewStatus;
   relevance_keywords: string[];
+}
+
+export interface AdminInterviewExperienceImportResponse {
+  imported_count: number;
+  experiences: AdminInterviewExperience[];
 }
 
 export type InterviewReviewStatus = 'draft' | 'needs_review' | 'published' | 'rejected';
