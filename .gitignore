@@ -85,3 +85,6 @@ RAILWAY_DEPLOYMENT.md
 QUICK_START_RAILWAY.md
 .env.railway.example
 scripts/check_railway_config.sh
+
+# Personal resume notes — kept local, not for the public repo
+docs/简历项目描述.md
