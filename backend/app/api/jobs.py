@@ -13,7 +13,8 @@ from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.enums import APPLIED_STATUSES, ApplicationStatus, ReviewStatus
 from app.core.text import normalize_company
-from app.models.models import Application, InterviewExperience, JobPreference, Opportunity, Resume, User, UserJobMatch
+from app.models.models import InterviewExperience, JobPreference, Opportunity, Resume, User, UserJobMatch
+from app.services.application_service import ApplicationInput, application_service
 from app.services.agent_service import JobMatchingAgent
 
 router = APIRouter()
@@ -348,22 +349,20 @@ async def mark_job_applied(
     if not user_match:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    now = datetime.now(timezone.utc)
     if user_match.application is None:
-        db.add(
-            Application(
-                user_id=current_user.id,
-                opportunity_id=user_match.opportunity_id,
-                user_job_match_id=user_match.id,
-                status=ApplicationStatus.APPLIED,
-                applied_at=now,
-                status_updated_at=now,
-            )
+        # Same write path as the applications API so the snapshot is always filled.
+        await application_service.create_for_match(
+            db,
+            current_user.id,
+            user_match,
+            ApplicationInput(status=ApplicationStatus.APPLIED),
         )
     else:
-        user_match.application.status = ApplicationStatus.APPLIED
-        user_match.application.applied_at = now
-        user_match.application.status_updated_at = now
+        await application_service.update(
+            db,
+            user_match.application,
+            {"status": ApplicationStatus.APPLIED},
+        )
 
     await db.commit()
 

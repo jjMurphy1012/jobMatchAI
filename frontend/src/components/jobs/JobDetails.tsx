@@ -1,18 +1,25 @@
 import { motion } from 'framer-motion'
-import { Copy, Check, Sparkles, AlertCircle, CheckCircle2, Loader2, ExternalLink, BookOpen } from 'lucide-react'
+import { Copy, Check, Sparkles, AlertCircle, CheckCircle2, ClipboardCheck, Loader2, ExternalLink, BookOpen } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { JobResponse, jobsApi } from '../../api/client'
+import { ApplicationFormModal } from '../applications/ApplicationFormModal'
 
 interface JobDetailsProps {
   job: JobResponse
   onCoverLetterGenerated?: (jobId: string, coverLetter: string) => void
+  onApplicationTracked?: (jobId: string) => void
 }
 
-export function JobDetails({ job, onCoverLetterGenerated }: JobDetailsProps) {
+export function JobDetails({ job, onCoverLetterGenerated, onApplicationTracked }: JobDetailsProps) {
   const [copied, setCopied] = useState(false)
   const [coverLetter, setCoverLetter] = useState(job.cover_letter || '')
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
+  const [trackerOpen, setTrackerOpen] = useState(false)
+  // application_status is set for every tracked record, including stages like
+  // "saved" that is_applied deliberately excludes.
+  const tracked = Boolean(job.application_status)
 
   const copyToClipboard = async () => {
     if (coverLetter) {
@@ -61,6 +68,50 @@ export function JobDetails({ job, onCoverLetterGenerated }: JobDetailsProps) {
       className="overflow-hidden"
     >
       <div className="pt-6 mt-6 border-t border-slate-100 space-y-8">
+
+        {/* Application tracking */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.4rem] border border-slate-200 bg-slate-50/70 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800">
+              {tracked ? 'This job is in your applications' : 'Already applied to this one?'}
+            </p>
+            <p className="text-xs text-slate-500">
+              {tracked
+                ? 'Update its stage any time from the Applications page.'
+                : 'Track it without retyping anything — the details are copied for you.'}
+            </p>
+          </div>
+          {tracked ? (
+            <Link
+              to="/applications"
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+            >
+              <ClipboardCheck size={14} />
+              View in Applications
+            </Link>
+          ) : (
+            <button
+              onClick={() => setTrackerOpen(true)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90"
+            >
+              <ClipboardCheck size={14} />
+              I applied — track it
+            </button>
+          )}
+        </div>
+
+        <ApplicationFormModal
+          open={trackerOpen}
+          draft={{
+            user_job_match_id: job.id,
+            company_name: job.company,
+            job_title: job.title,
+            location: job.location || '',
+            job_url: job.url || '',
+          }}
+          onClose={() => setTrackerOpen(false)}
+          onSaved={() => onApplicationTracked?.(job.id)}
+        />
         
         {/* Why You Match Section */}
         {job.match_reason && (

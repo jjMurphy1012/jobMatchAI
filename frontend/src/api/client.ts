@@ -191,6 +191,31 @@ export const preferencesApi = {
     }),
 }
 
+export const applicationsApi = {
+  list: (params: ApplicationListParams = {}) => {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    })
+    const suffix = query.toString() ? `?${query.toString()}` : ''
+    return fetchApi<ApplicationListResponse>(`/api/applications${suffix}`)
+  },
+  create: (payload: ApplicationCreatePayload) =>
+    fetchApi<ApplicationRecord>('/api/applications', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (id: string, payload: ApplicationUpdatePayload) =>
+    fetchApi<ApplicationRecord>(`/api/applications/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  remove: (id: string) =>
+    fetchApi<null>(`/api/applications/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
 export const jobsApi = {
   list: (skip = 0, limit = 10) =>
     fetchApi<JobListResponse>(`/api/jobs?skip=${skip}&limit=${limit}`),
@@ -293,6 +318,87 @@ export interface SourceSyncRun {
   company_name?: string;
   board_token?: string;
 }
+
+export type ApplicationStatus =
+  | 'saved'
+  | 'applying'
+  | 'applied'
+  | 'assessment'
+  | 'interviewing'
+  | 'offer'
+  | 'rejected'
+  | 'withdrawn';
+
+export type ApplicationChannel = 'online' | 'referral';
+export type ApplicationJobType = 'full_time' | 'internship' | 'new_grad' | 'contract';
+
+export const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  saved: 'Saved',
+  applying: 'Applying',
+  applied: 'Applied',
+  assessment: 'OA / Assessment',
+  interviewing: 'Interviewing',
+  offer: 'Offer',
+  rejected: 'Rejected',
+  withdrawn: 'Withdrawn',
+};
+
+export const APPLICATION_JOB_TYPE_LABELS: Record<ApplicationJobType, string> = {
+  full_time: 'Full Time',
+  internship: 'Internship',
+  new_grad: 'New Grad',
+  contract: 'Contract',
+};
+
+export interface ApplicationRecord {
+  id: string;
+  company_name: string;
+  job_title: string;
+  location?: string;
+  job_url?: string;
+  job_type?: ApplicationJobType;
+  season?: string;
+  channel: ApplicationChannel;
+  status: ApplicationStatus;
+  applied_at?: string;
+  notes?: string;
+  opportunity_id?: string;
+  user_job_match_id?: string;
+  status_updated_at?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ApplicationListResponse {
+  applications: ApplicationRecord[];
+  status_counts: Partial<Record<ApplicationStatus, number>>;
+  total: number;
+}
+
+export interface ApplicationListParams {
+  status?: ApplicationStatus;
+  job_type?: ApplicationJobType;
+  channel?: ApplicationChannel;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ApplicationCreatePayload {
+  user_job_match_id?: string;
+  company_name?: string;
+  job_title?: string;
+  location?: string;
+  job_url?: string;
+  job_type?: ApplicationJobType;
+  season?: string;
+  channel: ApplicationChannel;
+  status: ApplicationStatus;
+  applied_at?: string;
+  notes?: string;
+}
+
+export type ApplicationUpdatePayload = Partial<Omit<ApplicationCreatePayload, 'user_job_match_id'>>;
 
 export interface NotificationLog {
   id: string;

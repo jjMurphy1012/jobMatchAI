@@ -118,6 +118,7 @@ export default function Jobs() {
                   <JobDetails
                     job={job}
                     onCoverLetterGenerated={() => queryClient.invalidateQueries({ queryKey: ['jobs'] })}
+                    onApplicationTracked={() => queryClient.invalidateQueries({ queryKey: ['jobs'] })}
                   />
                 </JobCard>
               ))}

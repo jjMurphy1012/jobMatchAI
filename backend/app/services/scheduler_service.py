@@ -8,7 +8,6 @@ import logging
 from app.core.config import settings
 from app.core.database import async_session_maker
 from app.models.models import (
-    Application,
     DailyTask,
     JobPreference,
     Opportunity,
@@ -136,15 +135,13 @@ class SchedulerService:
                     delete(DailyTask).where(DailyTask.date < cutoff_date)
                 )
 
+                # Applications keep their own snapshot of the job, and their
+                # foreign keys are ON DELETE SET NULL, so retention no longer has
+                # to pin every applied match and opportunity in the database.
                 await db.execute(
                     delete(UserJobMatch).where(
                         UserJobMatch.last_scored_at < cutoff_date,
                         UserJobMatch.cover_letter.is_(None),
-                        ~exists(
-                            select(Application.id).where(
-                                Application.user_job_match_id == UserJobMatch.id
-                            )
-                        ),
                     )
                 )
 
@@ -154,11 +151,6 @@ class SchedulerService:
                         ~exists(
                             select(UserJobMatch.id).where(
                                 UserJobMatch.opportunity_id == Opportunity.id
-                            )
-                        ),
-                        ~exists(
-                            select(Application.id).where(
-                                Application.opportunity_id == Opportunity.id
                             )
                         ),
                     )

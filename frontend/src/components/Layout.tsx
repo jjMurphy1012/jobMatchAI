@@ -4,6 +4,7 @@ import {
   Bell,
   BookOpen,
   Briefcase,
+  ClipboardList,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -21,6 +22,7 @@ const navItems = [
   { path: '/resume', label: 'Resume', mobileLabel: 'Resume', icon: FileText },
   { path: '/preferences', label: 'Career Profile', mobileLabel: 'Profile', icon: Settings },
   { path: '/matches', label: 'Matches', mobileLabel: 'Matches', icon: Briefcase },
+  { path: '/applications', label: 'Applications', mobileLabel: 'Applied', icon: ClipboardList },
   { path: '/interviews', label: 'Interview Prep', mobileLabel: 'Prep', icon: BookOpen },
 ]
 

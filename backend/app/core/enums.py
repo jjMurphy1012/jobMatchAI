@@ -5,10 +5,60 @@ class ApplicationStatus:
     SAVED: Final = "saved"
     APPLYING: Final = "applying"
     APPLIED: Final = "applied"
+    ASSESSMENT: Final = "assessment"
     INTERVIEWING: Final = "interviewing"
     OFFER: Final = "offer"
     REJECTED: Final = "rejected"
     WITHDRAWN: Final = "withdrawn"
+
+
+APPLICATION_STATUSES: Final = frozenset({
+    ApplicationStatus.SAVED,
+    ApplicationStatus.APPLYING,
+    ApplicationStatus.APPLIED,
+    ApplicationStatus.ASSESSMENT,
+    ApplicationStatus.INTERVIEWING,
+    ApplicationStatus.OFFER,
+    ApplicationStatus.REJECTED,
+    ApplicationStatus.WITHDRAWN,
+})
+
+
+# Stages that imply the application was actually submitted. Used to stamp
+# applied_at when a record reaches one of them without a recorded date.
+SUBMITTED_STATUSES: Final = frozenset({
+    ApplicationStatus.APPLIED,
+    ApplicationStatus.ASSESSMENT,
+    ApplicationStatus.INTERVIEWING,
+    ApplicationStatus.OFFER,
+    ApplicationStatus.REJECTED,
+})
+
+
+class ApplicationChannel:
+    ONLINE: Final = "online"
+    REFERRAL: Final = "referral"
+
+
+APPLICATION_CHANNELS: Final = frozenset({
+    ApplicationChannel.ONLINE,
+    ApplicationChannel.REFERRAL,
+})
+
+
+class JobType:
+    FULL_TIME: Final = "full_time"
+    INTERNSHIP: Final = "internship"
+    NEW_GRAD: Final = "new_grad"
+    CONTRACT: Final = "contract"
+
+
+JOB_TYPES: Final = frozenset({
+    JobType.FULL_TIME,
+    JobType.INTERNSHIP,
+    JobType.NEW_GRAD,
+    JobType.CONTRACT,
+})
 
 
 # Statuses that mean the user has (at minimum) submitted — used by the UI
@@ -16,6 +66,7 @@ class ApplicationStatus:
 APPLIED_STATUSES: Final = frozenset({
     ApplicationStatus.APPLYING,
     ApplicationStatus.APPLIED,
+    ApplicationStatus.ASSESSMENT,
     ApplicationStatus.INTERVIEWING,
     ApplicationStatus.OFFER,
 })

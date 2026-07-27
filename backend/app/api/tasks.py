@@ -13,6 +13,7 @@ from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.enums import ApplicationStatus
+from app.services.application_service import ApplicationInput, application_service
 from app.models.models import Application, DailyTask, User, UserJobMatch
 
 router = APIRouter()
@@ -101,24 +102,22 @@ async def _set_application_status(
 ) -> None:
     user_match = task.user_job_match
     application = user_match.application
-    now = datetime.now(timezone.utc)
 
     if application is None:
-        db.add(
-            Application(
-                user_id=user_id,
-                opportunity_id=user_match.opportunity_id,
-                user_job_match_id=user_match.id,
-                status=status,
-                applied_at=applied_at,
-                status_updated_at=now,
-            )
+        # Same write path as the applications API, so the job snapshot is filled.
+        await application_service.create_for_match(
+            db,
+            user_id,
+            user_match,
+            ApplicationInput(status=status, applied_at=applied_at),
         )
         return
 
-    application.status = status
-    application.applied_at = applied_at
-    application.status_updated_at = now
+    await application_service.update(
+        db,
+        application,
+        {"status": status, "applied_at": applied_at},
+    )
 
 
 @router.get("", response_model=DailyTasksListResponse)

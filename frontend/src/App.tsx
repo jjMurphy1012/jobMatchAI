@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import Layout from './components/Layout'
 import Admin from './pages/Admin'
+import Applications from './pages/Applications'
 import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
 import InterviewPrep from './pages/InterviewPrep'
@@ -26,6 +27,7 @@ function App() {
           <Route path="preferences" element={<Preferences />} />
           <Route path="matches" element={<Jobs />} />
           <Route path="jobs" element={<Jobs />} />
+          <Route path="applications" element={<Applications />} />
           <Route path="interviews" element={<InterviewPrep />} />
         </Route>
       </Route>

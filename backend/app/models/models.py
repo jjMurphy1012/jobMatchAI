@@ -155,7 +155,7 @@ class Opportunity(Base):
 
     company_source = relationship("CompanySource", back_populates="opportunities")
     user_job_matches = relationship("UserJobMatch", back_populates="opportunity", cascade="all, delete-orphan")
-    applications = relationship("Application", back_populates="opportunity", cascade="all, delete-orphan")
+    applications = relationship("Application", back_populates="opportunity")
 
 
 class UserJobMatch(Base):
@@ -182,7 +182,7 @@ class UserJobMatch(Base):
     user = relationship("User", back_populates="user_job_matches")
     opportunity = relationship("Opportunity", back_populates="user_job_matches")
     daily_tasks = relationship("DailyTask", back_populates="user_job_match", cascade="all, delete-orphan")
-    application = relationship("Application", back_populates="user_job_match", uselist=False, cascade="all, delete-orphan")
+    application = relationship("Application", back_populates="user_job_match", uselist=False)
 
 
 class Application(Base):
@@ -196,15 +196,29 @@ class Application(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    opportunity_id = Column(String, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_job_match_id = Column(String, ForeignKey("user_job_matches.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Both links are optional: an application can be filed for a job the system
+    # never matched (manual entry). When they are set, the snapshot below still
+    # wins for display, so a delisted or purged opportunity cannot erase history.
+    opportunity_id = Column(String, ForeignKey("opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_job_match_id = Column(String, ForeignKey("user_job_matches.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    company_name = Column(String, nullable=False)
+    job_title = Column(String, nullable=False)
+    location = Column(String, nullable=True)
+    job_url = Column(String, nullable=True)
+    job_type = Column(String, nullable=True)
+    season = Column(String, nullable=True)
+    channel = Column(String, nullable=False, default="online")
 
     status = Column(String, nullable=False, default="saved")
     applied_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    status_updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # No onupdate: ApplicationService stamps this only when the stage actually
+    # moves, so editing a note must not look like a status change.
+    status_updated_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="applications")
     opportunity = relationship("Opportunity", back_populates="applications")
