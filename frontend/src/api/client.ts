@@ -117,6 +117,13 @@ export const adminApi = {
     }),
   listSourceSyncRuns: (limit = 20) =>
     fetchApi<SourceSyncRun[]>(`/api/admin/source-sync-runs?limit=${limit}`),
+  listNotifications: (limit = 20) =>
+    fetchApi<NotificationLog[]>(`/api/admin/notifications?limit=${limit}`),
+  sendTestNotification: (email?: string) =>
+    fetchApi<NotificationLog>('/api/admin/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify({ email: email || undefined }),
+    }),
   listInterviewExperiences: (reviewStatus?: InterviewReviewStatus | 'all') => {
     const query = reviewStatus && reviewStatus !== 'all' ? `?review_status=${reviewStatus}` : ''
     return fetchApi<AdminInterviewExperience[]>(`/api/admin/interview-experiences${query}`)
@@ -285,6 +292,22 @@ export interface SourceSyncRun {
   error_message?: string;
   company_name?: string;
   board_token?: string;
+}
+
+export interface NotificationLog {
+  id: string;
+  user_id: string;
+  kind: 'daily_digest' | 'test';
+  provider: string;
+  recipient: string;
+  subject?: string;
+  status: 'sent' | 'failed' | 'skipped';
+  attempts: number;
+  provider_message_id?: string;
+  error_message?: string;
+  match_count: number;
+  sent_for_date?: string;
+  created_at?: string;
 }
 
 export interface AdminInterviewExperience {

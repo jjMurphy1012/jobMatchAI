@@ -51,6 +51,17 @@ class SourceType:
 SOURCE_TYPES: Final = frozenset({SourceType.GREENHOUSE})
 
 
+class NotificationKind:
+    DAILY_DIGEST: Final = "daily_digest"
+    TEST: Final = "test"
+
+
+class NotificationStatus:
+    SENT: Final = "sent"
+    FAILED: Final = "failed"
+    SKIPPED: Final = "skipped"
+
+
 class SourceSyncStatus:
     RUNNING: Final = "running"
     SUCCESS: Final = "success"

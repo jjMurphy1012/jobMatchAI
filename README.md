@@ -19,8 +19,10 @@ AI-assisted job matching for resume-driven job search. The app stores resumes in
 - Match list/detail with skill fit and apply state
 - Cover letter generation on demand
 - Daily Tasks based on current matches
+- Daily match digest emails via SendGrid, with delivery logs and once-per-day idempotency
 - Interview Prep library
 - Admin user management
+- Admin email delivery log and test send
 - Admin Greenhouse source management
 - Admin interview experience CRUD, review workflow, JSON import, filters
 

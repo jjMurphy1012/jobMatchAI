@@ -52,8 +52,17 @@ class Settings(BaseSettings):
     # RapidAPI (for JSearch job search API)
     RAPIDAPI_KEY: Optional[str] = None
 
-    # Email (optional for now)
+    # Email (SendGrid)
+    EMAIL_NOTIFICATIONS_ENABLED: bool = False
     SENDGRID_API_KEY: Optional[str] = None
+    SENDGRID_API_BASE_URL: str = "https://api.sendgrid.com"
+    SENDGRID_FROM_EMAIL: Optional[str] = None
+    SENDGRID_FROM_NAME: str = "JobMatchAI"
+    SENDGRID_SANDBOX_MODE: bool = False
+    SENDGRID_TIMEOUT_SECONDS: float = 15.0
+    EMAIL_MAX_ATTEMPTS: int = 3
+    EMAIL_RETRY_BACKOFF_SECONDS: float = 1.0
+    EMAIL_DIGEST_MAX_MATCHES: int = 5
 
     # Matching Configuration
     MATCH_THRESHOLD: int = 70

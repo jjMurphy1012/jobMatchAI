@@ -61,16 +61,33 @@ The frontend does not need an API URL override in the current deployment shape. 
 
 | Variable | Default | Notes |
 |---|---:|---|
-| `ENABLE_SCHEDULER` | `false` | Keep false on web service. |
-| `PUSH_HOUR` | `7` | Reserved for future daily push. |
-| `PUSH_MINUTE` | `0` | Reserved for future daily push. |
-| `TIMEZONE` | `America/New_York` | Scheduler timezone. |
+| `ENABLE_SCHEDULER` | `false` | Keep false on web service. Enable on exactly one worker. |
+| `PUSH_HOUR` | `7` | Hour of the daily match run and digest email. |
+| `PUSH_MINUTE` | `0` | Minute of the daily match run. |
+| `TIMEZONE` | `America/New_York` | Scheduler timezone, also used for digest idempotency dates. |
+
+## Email Notifications
+
+| Variable | Default | Notes |
+|---|---:|---|
+| `EMAIL_NOTIFICATIONS_ENABLED` | `false` | Master switch. When false, sends are recorded as `skipped`. |
+| `SENDGRID_API_KEY` | none | SendGrid API key with Mail Send permission. |
+| `SENDGRID_FROM_EMAIL` | none | Verified sender address. Required to send. |
+| `SENDGRID_FROM_NAME` | `JobMatchAI` | Display name on outgoing mail. |
+| `SENDGRID_API_BASE_URL` | `https://api.sendgrid.com` | Override for testing. |
+| `SENDGRID_SANDBOX_MODE` | `false` | Validate requests without delivering mail. |
+| `SENDGRID_TIMEOUT_SECONDS` | `15.0` | Per-request HTTP timeout. |
+| `EMAIL_MAX_ATTEMPTS` | `3` | Attempts before a send is marked failed. |
+| `EMAIL_RETRY_BACKOFF_SECONDS` | `1.0` | Base delay for exponential backoff. |
+| `EMAIL_DIGEST_MAX_MATCHES` | `5` | Matches listed in one digest email. |
+
+Per-user opt-in lives on the career profile (`reminder_enabled`, `reminder_email`);
+`reminder_email` falls back to the account email when unset.
 
 ## Optional / Legacy
 
 | Variable | Notes |
 |---|---|
-| `SENDGRID_API_KEY` | Reserved for future email notifications. |
 | `RAPIDAPI_KEY` | Legacy fallback path only. |
 | `LINKEDIN_EMAIL` / `LINKEDIN_PASSWORD` | Legacy, no longer required for primary flow. |
 

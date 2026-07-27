@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Database, Power, RefreshCw, Shield, Trash2, Users } from 'lucide-react'
+import { BookOpen, Database, Mail, Power, RefreshCw, Shield, Trash2, Users } from 'lucide-react'
 
 import {
   adminApi,
@@ -9,6 +9,7 @@ import {
   CompanySource,
   CompanySourcePayload,
   InterviewReviewStatus,
+  NotificationLog,
   SourceSyncRun,
 } from '../api/client'
 import { useAuth } from '../components/auth/AuthProvider'
@@ -59,6 +60,12 @@ function splitCsv(value: string) {
     .filter(Boolean)
 }
 
+function notificationStatusBadgeVariant(status: NotificationLog['status']): 'success' | 'destructive' | 'secondary' {
+  if (status === 'sent') return 'success'
+  if (status === 'failed') return 'destructive'
+  return 'secondary'
+}
+
 function reviewStatusBadgeVariant(status: InterviewReviewStatus): 'success' | 'warning' | 'destructive' | 'secondary' {
   if (status === 'published') return 'success'
   if (status === 'needs_review') return 'warning'
@@ -71,10 +78,15 @@ export default function Admin() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [companySources, setCompanySources] = useState<CompanySource[]>([])
   const [syncRuns, setSyncRuns] = useState<SourceSyncRun[]>([])
+  const [notifications, setNotifications] = useState<NotificationLog[]>([])
   const [experiences, setExperiences] = useState<AdminInterviewExperience[]>([])
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [loadingSources, setLoadingSources] = useState(true)
   const [loadingSyncRuns, setLoadingSyncRuns] = useState(true)
+  const [loadingNotifications, setLoadingNotifications] = useState(true)
+  const [sendingTest, setSendingTest] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [testResult, setTestResult] = useState<string | null>(null)
   const [loadingExperiences, setLoadingExperiences] = useState(true)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [savingSource, setSavingSource] = useState(false)
@@ -92,7 +104,7 @@ export default function Admin() {
   const [experienceImportJson, setExperienceImportJson] = useState('')
 
   useEffect(() => {
-    void Promise.all([loadUsers(), loadCompanySources(), loadSyncRuns()])
+    void Promise.all([loadUsers(), loadCompanySources(), loadSyncRuns(), loadNotifications()])
   }, [])
 
   useEffect(() => {
@@ -147,6 +159,36 @@ export default function Admin() {
       setError(response.error || 'Unable to load source sync logs.')
     }
     setLoadingSyncRuns(false)
+  }
+
+  async function loadNotifications() {
+    setLoadingNotifications(true)
+    const response = await adminApi.listNotifications(12)
+    if (response.data) {
+      setNotifications(response.data)
+      setError(null)
+    } else {
+      setError(response.error || 'Unable to load notification logs.')
+    }
+    setLoadingNotifications(false)
+  }
+
+  async function sendTestEmail() {
+    setSendingTest(true)
+    setTestResult(null)
+    const response = await adminApi.sendTestNotification(testEmail.trim() || undefined)
+    if (response.data) {
+      const log = response.data
+      setTestResult(
+        log.status === 'sent'
+          ? `Sent to ${log.recipient} after ${log.attempts} attempt(s).`
+          : `Delivery ${log.status}: ${log.error_message || 'no details returned.'}`
+      )
+      setNotifications((current) => [log, ...current].slice(0, 12))
+    } else {
+      setTestResult(response.error || 'Unable to send the test email.')
+    }
+    setSendingTest(false)
   }
 
   async function loadExperiences() {
@@ -630,6 +672,82 @@ export default function Admin() {
               )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/80 bg-white/92">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Mail className="h-5 w-5 text-slate-500" />
+            <div>
+              <CardTitle className="text-xl">Email notifications</CardTitle>
+              <CardDescription>
+                Daily digests go out after the scheduled match run, once per user per day. Send a test
+                email to confirm SendGrid delivery is configured.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex-1 min-w-[220px] space-y-1.5">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Test recipient
+              </span>
+              <input
+                type="email"
+                value={testEmail}
+                onChange={(event) => setTestEmail(event.target.value)}
+                placeholder={currentUser?.email || 'you@example.com'}
+                className="input"
+              />
+            </label>
+            <Button disabled={sendingTest} onClick={() => void sendTestEmail()}>
+              {sendingTest ? 'Sending...' : 'Send test email'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => void loadNotifications()}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
+
+          {testResult && <p className="text-sm text-slate-600">{testResult}</p>}
+
+          {loadingNotifications ? (
+            <div className="flex items-center gap-3 py-8 text-sm text-slate-500">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+              Loading delivery log...
+            </div>
+          ) : notifications.length === 0 ? (
+            <div className="rounded-[1.5rem] border border-dashed border-slate-200 px-6 py-8 text-center text-sm text-slate-500">
+              No emails sent yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {notifications.map((log) => (
+                <div key={log.id} className="rounded-[1.5rem] border border-slate-200 bg-white/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{log.recipient}</p>
+                      <p className="text-xs text-slate-400">
+                        {log.kind === 'daily_digest' ? 'Daily digest' : 'Test'}
+                        {log.created_at ? ` · ${new Date(log.created_at).toLocaleString()}` : ''}
+                      </p>
+                    </div>
+                    <Badge variant={notificationStatusBadgeVariant(log.status)}>{log.status}</Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-500">
+                    <span>{log.attempts} attempt{log.attempts === 1 ? '' : 's'}</span>
+                    <span>{log.match_count} matches</span>
+                    <span className="truncate">{log.provider_message_id || '—'}</span>
+                  </div>
+                  {log.error_message && (
+                    <p className="mt-3 line-clamp-3 text-xs leading-5 text-rose-600">{log.error_message}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

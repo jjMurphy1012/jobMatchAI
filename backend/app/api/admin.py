@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
@@ -15,7 +15,8 @@ from app.api.deps import require_admin
 from app.core.database import get_db
 from app.core.enums import REVIEW_STATUSES, SOURCE_TYPES, SourceType, ReviewStatus, USER_ROLES, UserRole
 from app.core.text import normalize_company
-from app.models.models import CompanySource, InterviewExperience, SourceSyncRun, User
+from app.models.models import CompanySource, InterviewExperience, NotificationLog, SourceSyncRun, User
+from app.services.notification_service import notification_service
 from app.services.source_sync_service import CompanySourceSyncService
 
 router = APIRouter()
@@ -67,6 +68,28 @@ class SourceSyncRunResponse(BaseModel):
     error_message: Optional[str]
     company_name: Optional[str] = None
     board_token: Optional[str] = None
+
+
+class NotificationLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    kind: str
+    provider: str
+    recipient: str
+    subject: Optional[str]
+    status: str
+    attempts: int
+    provider_message_id: Optional[str]
+    error_message: Optional[str]
+    match_count: int
+    sent_for_date: Optional[date]
+    created_at: Optional[datetime]
+
+
+class TestNotificationRequest(BaseModel):
+    email: Optional[str] = Field(default=None, min_length=5, max_length=320)
 
 
 class AdminInterviewExperienceResponse(BaseModel):
@@ -332,6 +355,37 @@ async def list_source_sync_runs(
         .limit(capped_limit)
     )
     return [_build_sync_run_response(run) for run in result.scalars().all()]
+
+
+@router.get("/notifications", response_model=list[NotificationLogResponse])
+async def list_notification_logs(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    capped_limit = min(max(limit, 1), 100)
+    result = await db.execute(
+        select(NotificationLog)
+        .order_by(NotificationLog.created_at.desc())
+        .limit(capped_limit)
+    )
+    return [NotificationLogResponse.model_validate(log) for log in result.scalars().all()]
+
+
+@router.post("/notifications/test", response_model=NotificationLogResponse)
+async def send_test_notification(
+    payload: TestNotificationRequest,
+    current_admin: User = Depends(require_admin),
+):
+    recipient = (payload.email or current_admin.email or "").strip()
+    if not recipient:
+        raise HTTPException(status_code=400, detail="No recipient address available.")
+
+    log = await notification_service.send_test_email(current_admin.id, recipient)
+    if log is None:
+        raise HTTPException(status_code=502, detail="Test email could not be recorded.")
+
+    return NotificationLogResponse.model_validate(log)
 
 
 @router.get("/interview-experiences", response_model=list[AdminInterviewExperienceResponse])

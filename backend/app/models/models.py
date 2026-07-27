@@ -3,11 +3,14 @@ from sqlalchemy import (
     String,
     Integer,
     Boolean,
+    Date,
     Text,
     DateTime,
     ForeignKey,
+    Index,
     JSON,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -250,6 +253,46 @@ class DailyTask(Base):
     user_job_match = relationship("UserJobMatch", back_populates="daily_tasks")
 
 
+class NotificationLog(Base):
+    """Delivery record for an outbound notification email.
+
+    Idempotency lives in the database rather than in the scheduler process: the
+    partial unique index below only covers rows that were actually sent, so a
+    retried or duplicated run cannot send twice, while failed attempts stay
+    retryable.
+    """
+    __tablename__ = "notification_logs"
+    __table_args__ = (
+        Index(
+            "uq_notification_logs_sent_per_day",
+            "user_id",
+            "kind",
+            "sent_for_date",
+            unique=True,
+            postgresql_where=text("status = 'sent' AND sent_for_date IS NOT NULL"),
+        ),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    kind = Column(String, nullable=False)
+    provider = Column(String, nullable=False, default="sendgrid")
+    recipient = Column(String, nullable=False)
+    subject = Column(String, nullable=True)
+
+    status = Column(String, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)
+    provider_message_id = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+    match_count = Column(Integer, nullable=False, default=0)
+    sent_for_date = Column(Date, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="notification_logs")
+
+
 class User(Base):
     """Authenticated application user."""
     __tablename__ = "users"
@@ -271,6 +314,7 @@ class User(Base):
     job_preferences = relationship("JobPreference", back_populates="user", cascade="all, delete-orphan")
     user_job_matches = relationship("UserJobMatch", back_populates="user", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")
+    notification_logs = relationship("NotificationLog", back_populates="user", cascade="all, delete-orphan")
     created_interview_experiences = relationship(
         "InterviewExperience",
         foreign_keys="InterviewExperience.created_by_user_id",

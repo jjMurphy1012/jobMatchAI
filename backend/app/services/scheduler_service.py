@@ -17,6 +17,7 @@ from app.models.models import (
     UserJobMatch,
 )
 from app.services.agent_service import JobMatchingAgent
+from app.services.notification_service import notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class SchedulerService:
         Runs at 7:00 AM EST.
         """
         logger.info("Starting daily job push...")
+        run_started_at = datetime.now(timezone.utc)
 
         try:
             async with async_session_maker() as db:
@@ -93,13 +95,30 @@ class SchedulerService:
             for user_id in user_ids:
                 agent = JobMatchingAgent(user_id=user_id)
                 result = await agent.run()
-                if result.get("success"):
-                    logger.info(f"Daily push complete for user {user_id}: {result.get('jobs_found')} jobs found")
-                else:
+                if not result.get("success"):
                     logger.error(f"Daily push failed for user {user_id}: {result.get('error')}")
+                    continue
+
+                logger.info(f"Daily push complete for user {user_id}: {result.get('jobs_found')} jobs found")
+                await self._send_daily_digest(user_id, run_started_at)
 
         except Exception as e:
             logger.error(f"Daily job push error: {e}")
+
+    async def _send_daily_digest(self, user_id: str, scored_since: datetime):
+        """Email one user their fresh matches. A delivery failure must not stop
+        the push for the remaining users."""
+        try:
+            log = await notification_service.send_daily_digest(user_id, scored_since=scored_since)
+            if log is not None:
+                logger.info(
+                    "Digest to %s finished with status=%s attempts=%s",
+                    log.recipient,
+                    log.status,
+                    log.attempts,
+                )
+        except Exception as e:
+            logger.error(f"Daily digest error for user {user_id}: {e}")
 
     async def cleanup_old_data(self):
         """
