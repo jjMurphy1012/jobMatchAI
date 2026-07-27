@@ -209,6 +209,7 @@ class Application(Base):
     job_url = Column(String, nullable=True)
     job_type = Column(String, nullable=True)
     season = Column(String, nullable=True)
+    region = Column(String, nullable=True)
     channel = Column(String, nullable=False, default="online")
 
     status = Column(String, nullable=False, default="saved")
@@ -223,6 +224,31 @@ class Application(Base):
     user = relationship("User", back_populates="applications")
     opportunity = relationship("Opportunity", back_populates="applications")
     user_job_match = relationship("UserJobMatch", back_populates="application")
+    events = relationship(
+        "ApplicationEvent",
+        back_populates="application",
+        cascade="all, delete-orphan",
+        order_by="ApplicationEvent.occurred_on",
+    )
+
+
+class ApplicationEvent(Base):
+    """One dated step of an application: submitted, assessment, interview round,
+    outcome. Several rounds of the same kind are allowed."""
+    __tablename__ = "application_events"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    application_id = Column(
+        String, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    kind = Column(String, nullable=False)
+    occurred_on = Column(Date, nullable=False)
+    label = Column(String, nullable=True)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    application = relationship("Application", back_populates="events")
 
 
 class InterviewExperience(Base):

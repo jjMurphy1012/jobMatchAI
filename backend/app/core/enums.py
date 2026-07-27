@@ -46,6 +46,57 @@ APPLICATION_CHANNELS: Final = frozenset({
 })
 
 
+class ApplicationEventKind:
+    """A dated step in an application's life. Stored as events rather than
+    columns so a role can go through several rounds without a schema change."""
+    APPLIED: Final = "applied"
+    ASSESSMENT: Final = "assessment"
+    INTERVIEW: Final = "interview"
+    OFFER: Final = "offer"
+    REJECTED: Final = "rejected"
+
+
+APPLICATION_EVENT_KINDS: Final = frozenset({
+    ApplicationEventKind.APPLIED,
+    ApplicationEventKind.ASSESSMENT,
+    ApplicationEventKind.INTERVIEW,
+    ApplicationEventKind.OFFER,
+    ApplicationEventKind.REJECTED,
+})
+
+# Recording a step also moves the application to the stage it implies.
+EVENT_KIND_TO_STATUS: Final = {
+    ApplicationEventKind.APPLIED: ApplicationStatus.APPLIED,
+    ApplicationEventKind.ASSESSMENT: ApplicationStatus.ASSESSMENT,
+    ApplicationEventKind.INTERVIEW: ApplicationStatus.INTERVIEWING,
+    ApplicationEventKind.OFFER: ApplicationStatus.OFFER,
+    ApplicationEventKind.REJECTED: ApplicationStatus.REJECTED,
+}
+
+
+class Region:
+    US: Final = "us"
+    UK: Final = "uk"
+    CANADA: Final = "canada"
+    AUSTRALIA: Final = "australia"
+    HONG_KONG: Final = "hong_kong"
+    MAINLAND_CHINA: Final = "mainland_china"
+    SINGAPORE: Final = "singapore"
+    OTHER: Final = "other"
+
+
+REGIONS: Final = frozenset({
+    Region.US,
+    Region.UK,
+    Region.CANADA,
+    Region.AUSTRALIA,
+    Region.HONG_KONG,
+    Region.MAINLAND_CHINA,
+    Region.SINGAPORE,
+    Region.OTHER,
+})
+
+
 class JobType:
     FULL_TIME: Final = "full_time"
     INTERNSHIP: Final = "internship"

@@ -3,11 +3,13 @@ import { X } from 'lucide-react'
 
 import {
   APPLICATION_JOB_TYPE_LABELS,
+  APPLICATION_REGION_LABELS,
   APPLICATION_STATUS_LABELS,
   ApplicationChannel,
   ApplicationCreatePayload,
   ApplicationJobType,
   ApplicationRecord,
+  ApplicationRegion,
   ApplicationStatus,
   applicationsApi,
 } from '../../api/client'
@@ -20,6 +22,7 @@ export interface ApplicationDraft {
   location: string
   job_url: string
   job_type: ApplicationJobType | ''
+  region: ApplicationRegion | ''
   season: string
   channel: ApplicationChannel
   status: ApplicationStatus
@@ -38,6 +41,7 @@ interface ApplicationFormModalProps {
 }
 
 const statusOptions = Object.entries(APPLICATION_STATUS_LABELS) as [ApplicationStatus, string][]
+const regionOptions = Object.entries(APPLICATION_REGION_LABELS) as [ApplicationRegion, string][]
 const jobTypeOptions = Object.entries(APPLICATION_JOB_TYPE_LABELS) as [ApplicationJobType, string][]
 
 function today() {
@@ -51,6 +55,7 @@ function emptyDraft(): ApplicationDraft {
     location: '',
     job_url: '',
     job_type: '',
+    region: '',
     season: String(new Date().getFullYear()),
     channel: 'online',
     status: 'applied',
@@ -66,6 +71,7 @@ function draftFromRecord(record: ApplicationRecord): ApplicationDraft {
     location: record.location || '',
     job_url: record.job_url || '',
     job_type: record.job_type || '',
+    region: record.region || '',
     season: record.season || '',
     channel: record.channel,
     status: record.status,
@@ -114,6 +120,7 @@ export function ApplicationFormModal({
       location: form.location.trim() || undefined,
       job_url: form.job_url.trim() || undefined,
       job_type: form.job_type || undefined,
+      region: form.region || undefined,
       season: form.season.trim() || undefined,
       channel: form.channel,
       status: form.status,
@@ -197,6 +204,22 @@ export function ApplicationFormModal({
             >
               <option value="">Not specified</option>
               {jobTypeOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Region</span>
+            <select
+              className="input"
+              value={form.region}
+              onChange={(event) => update({ region: event.target.value as ApplicationRegion | '' })}
+            >
+              <option value="">Infer from location</option>
+              {regionOptions.map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>

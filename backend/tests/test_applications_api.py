@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -8,7 +8,7 @@ from app.api import applications as applications_api
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.enums import ApplicationChannel, ApplicationStatus
-from app.models.models import Application, User
+from app.models.models import Application, ApplicationEvent, User
 from app.services.application_service import DuplicateApplicationError, MatchNotFoundError
 
 
@@ -39,6 +39,8 @@ def build_application(**overrides) -> Application:
         "notes": None,
         "opportunity_id": "opp-1",
         "user_job_match_id": "match-1",
+        "region": "us",
+        "events": [],
         "status_updated_at": datetime(2026, 7, 20, tzinfo=timezone.utc),
         "created_at": datetime(2026, 7, 20, tzinfo=timezone.utc),
         "updated_at": datetime(2026, 7, 20, tzinfo=timezone.utc),
@@ -231,3 +233,97 @@ def test_delete_of_another_users_record_is_not_found(client, monkeypatch):
     response = client.delete("/api/applications/app-someone-else")
 
     assert response.status_code == 404
+
+
+def test_add_event_records_a_stage(client, monkeypatch):
+    application = build_application()
+    captured = {}
+
+    async def fake_get_owned(*_args, **_kwargs):
+        return application
+
+    async def fake_add_event(_db, target, **kwargs):
+        captured.update(kwargs)
+        target.status = "assessment"
+        return target
+
+    monkeypatch.setattr(applications_api.application_service, "get_owned", fake_get_owned)
+    monkeypatch.setattr(applications_api.application_service, "add_event", fake_add_event)
+
+    response = client.post(
+        "/api/applications/app-1/events",
+        json={"kind": "assessment", "occurred_on": "2026-07-23", "label": "Online Test"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "assessment"
+    assert captured["kind"] == "assessment"
+    assert captured["occurred_on"] == date(2026, 7, 23)
+    assert captured["label"] == "Online Test"
+
+
+def test_add_event_rejects_an_unknown_stage(client, monkeypatch):
+    async def fake_get_owned(*_args, **_kwargs):
+        return build_application()
+
+    monkeypatch.setattr(applications_api.application_service, "get_owned", fake_get_owned)
+
+    response = client.post(
+        "/api/applications/app-1/events",
+        json={"kind": "coffee_chat", "occurred_on": "2026-07-23"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_add_event_on_another_users_record_is_not_found(client, monkeypatch):
+    async def fake_get_owned(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(applications_api.application_service, "get_owned", fake_get_owned)
+
+    response = client.post(
+        "/api/applications/app-x/events",
+        json={"kind": "interview", "occurred_on": "2026-07-23"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_event_reports_a_missing_event(client, monkeypatch):
+    async def fake_get_owned(*_args, **_kwargs):
+        return build_application()
+
+    async def fake_delete_event(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(applications_api.application_service, "get_owned", fake_get_owned)
+    monkeypatch.setattr(applications_api.application_service, "delete_event", fake_delete_event)
+
+    response = client.delete("/api/applications/app-1/events/event-x")
+
+    assert response.status_code == 404
+
+
+def test_export_returns_csv_of_the_filtered_set(client, monkeypatch):
+    application = build_application()
+    application.events = [
+        ApplicationEvent(kind="applied", occurred_on=date(2026, 7, 20)),
+        ApplicationEvent(kind="assessment", occurred_on=date(2026, 7, 23)),
+    ]
+
+    async def fake_list(*_args, **kwargs):
+        assert kwargs["limit"] == 1000  # the whole selection, not one page
+        return [application]
+
+    monkeypatch.setattr(applications_api.application_service, "list_for_user", fake_list)
+
+    response = client.get("/api/applications/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    body = response.text.splitlines()
+    assert body[0].startswith("Company,Role,Location,Region")
+    assert "Acme" in body[1]
+    assert "2026-07-20" in body[1]
+    assert "2026-07-23" in body[1]

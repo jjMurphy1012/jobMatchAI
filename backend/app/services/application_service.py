@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.enums import SUBMITTED_STATUSES, ApplicationChannel, ApplicationStatus
-from app.models.models import Application, Opportunity, UserJobMatch
+from app.core.enums import (
+    EVENT_KIND_TO_STATUS,
+    SUBMITTED_STATUSES,
+    ApplicationChannel,
+    ApplicationEventKind,
+    ApplicationStatus,
+    Region,
+)
+from app.models.models import Application, ApplicationEvent, Opportunity, UserJobMatch
 
 
 class ApplicationError(Exception):
@@ -38,6 +45,7 @@ class ApplicationInput:
     job_url: Optional[str] = None
     job_type: Optional[str] = None
     season: Optional[str] = None
+    region: Optional[str] = None
     channel: str = ApplicationChannel.ONLINE
     status: str = ApplicationStatus.APPLIED
     applied_at: Optional[datetime] = None
@@ -98,7 +106,57 @@ class ApplicationService:
         )
         db.add(application)
         await db.flush()
+
+        if application.applied_at is not None:
+            application.events.append(
+                ApplicationEvent(
+                    kind=ApplicationEventKind.APPLIED,
+                    occurred_on=application.applied_at.date(),
+                    label=application.channel,
+                )
+            )
+            await db.flush()
+
         return application
+
+    async def add_event(
+        self,
+        db: AsyncSession,
+        application: Application,
+        *,
+        kind: str,
+        occurred_on: date,
+        label: Optional[str] = None,
+        note: Optional[str] = None,
+    ) -> Application:
+        application.events.append(
+            ApplicationEvent(
+                kind=kind,
+                occurred_on=occurred_on,
+                label=_first_text(label),
+                note=_first_text(note),
+            )
+        )
+
+        # The timeline drives the stage, so the tabs never disagree with the row.
+        implied_status = EVENT_KIND_TO_STATUS.get(kind)
+        if implied_status and implied_status != application.status:
+            application.status = implied_status
+            application.status_updated_at = datetime.now(timezone.utc)
+
+        if kind == ApplicationEventKind.APPLIED and application.applied_at is None:
+            application.applied_at = datetime.combine(occurred_on, datetime.min.time(), timezone.utc)
+
+        await db.flush()
+        return application
+
+    async def delete_event(self, db: AsyncSession, application: Application, event_id: str) -> bool:
+        event = next((item for item in application.events if item.id == event_id), None)
+        if event is None:
+            return False
+        application.events.remove(event)
+        await db.flush()
+        return True
 
     async def update(
         self,
@@ -145,12 +203,26 @@ class ApplicationService:
         status: Optional[str] = None,
         job_type: Optional[str] = None,
         channel: Optional[str] = None,
+        region: Optional[str] = None,
         search: Optional[str] = None,
+        search_field: str = "company",
         limit: int = 50,
         offset: int = 0,
     ) -> list[Application]:
-        query = select(Application).where(Application.user_id == user_id)
-        query = self._apply_filters(query, status=status, job_type=job_type, channel=channel, search=search)
+        query = (
+            select(Application)
+            .options(selectinload(Application.events))
+            .where(Application.user_id == user_id)
+        )
+        query = self._apply_filters(
+            query,
+            status=status,
+            job_type=job_type,
+            channel=channel,
+            region=region,
+            search=search,
+            search_field=search_field,
+        )
 
         result = await db.execute(
             query.order_by(
@@ -169,7 +241,9 @@ class ApplicationService:
         *,
         job_type: Optional[str] = None,
         channel: Optional[str] = None,
+        region: Optional[str] = None,
         search: Optional[str] = None,
+        search_field: str = "company",
     ) -> dict[str, int]:
         """Stage counts for the filter tabs. Deliberately ignores the status
         filter so the tabs keep showing every stage's total."""
@@ -178,7 +252,14 @@ class ApplicationService:
             .where(Application.user_id == user_id)
             .group_by(Application.status)
         )
-        query = self._apply_filters(query, job_type=job_type, channel=channel, search=search)
+        query = self._apply_filters(
+            query,
+            job_type=job_type,
+            channel=channel,
+            region=region,
+            search=search,
+            search_field=search_field,
+        )
         result = await db.execute(query)
         return {status: count for status, count in result.all()}
 
@@ -189,7 +270,9 @@ class ApplicationService:
         status: Optional[str] = None,
         job_type: Optional[str] = None,
         channel: Optional[str] = None,
+        region: Optional[str] = None,
         search: Optional[str] = None,
+        search_field: str = "company",
     ):
         if status:
             query = query.where(Application.status == status)
@@ -197,12 +280,14 @@ class ApplicationService:
             query = query.where(Application.job_type == job_type)
         if channel:
             query = query.where(Application.channel == channel)
+        if region:
+            query = query.where(Application.region == region)
         if search:
             pattern = f"%{search.strip().lower()}%"
-            query = query.where(
-                func.lower(Application.company_name).like(pattern)
-                | func.lower(Application.job_title).like(pattern)
-            )
+            if search_field == "role":
+                query = query.where(func.lower(Application.job_title).like(pattern))
+            else:
+                query = query.where(func.lower(Application.company_name).like(pattern))
         return query
 
     async def _load_match(self, db: AsyncSession, user_id: str, match_id: str) -> UserJobMatch:
@@ -236,15 +321,41 @@ class ApplicationService:
         if not company or not title:
             raise ApplicationError("company_name and job_title are required.")
 
+        location = _first_text(payload.location, opportunity.location if opportunity else None)
+
         return {
             "company_name": company,
             "job_title": title,
-            "location": _first_text(payload.location, opportunity.location if opportunity else None),
+            "region": _first_text(payload.region) or _infer_region(location),
+            "location": location,
             "job_url": _first_text(payload.job_url, opportunity.url if opportunity else None),
             "job_type": _first_text(payload.job_type),
             "season": _first_text(payload.season),
             "channel": payload.channel or ApplicationChannel.ONLINE,
         }
+
+
+_REGION_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (Region.HONG_KONG, ("hong kong", "hongkong", "hk")),
+    (Region.SINGAPORE, ("singapore",)),
+    (Region.UK, ("united kingdom", "london", "england", "scotland", "uk")),
+    (Region.CANADA, ("canada", "toronto", "vancouver", "montreal")),
+    (Region.AUSTRALIA, ("australia", "sydney", "melbourne")),
+    (Region.MAINLAND_CHINA, ("china", "beijing", "shanghai", "shenzhen", "hangzhou")),
+    (Region.US, ("united states", "usa", "u.s.", "remote, us", ", ca", ", ny", ", ma", ", tx", ", wa")),
+)
+
+
+def _infer_region(location: Optional[str]) -> Optional[str]:
+    """Best-effort guess so rows land in a region tab without extra typing.
+    The user can always override it on the form."""
+    if not location:
+        return None
+    haystack = location.lower()
+    for region, hints in _REGION_HINTS:
+        if any(hint in haystack for hint in hints):
+            return region
+    return None
 
 
 def _first_text(*values: Optional[str]) -> Optional[str]:

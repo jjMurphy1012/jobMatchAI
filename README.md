@@ -17,7 +17,7 @@ AI-assisted job matching for resume-driven job search. The app stores resumes in
 - pgvector embeddings for resumes and opportunities
 - Structured prefilter + vector recall + batched LLM reranking
 - Match list/detail with skill fit and apply state
-- Application tracker with stages, manual entries, and one-click tracking from a match
+- Application tracker with a dated stage timeline, manual entries, one-click tracking from a match, stage/type/region filters, and CSV export
 - Cover letter generation on demand
 - Daily Tasks based on current matches
 - Daily match digest emails via SendGrid, with delivery logs and once-per-day idempotency
@@ -200,9 +200,12 @@ Auth:
 
 Applications:
 - `GET /api/applications`
+- `GET /api/applications/export`
 - `POST /api/applications`
 - `PATCH /api/applications/{id}`
 - `DELETE /api/applications/{id}`
+- `POST /api/applications/{id}/events`
+- `DELETE /api/applications/{id}/events/{event_id}`
 
 Resume:
 - `GET /api/resume`

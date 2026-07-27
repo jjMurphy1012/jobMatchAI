@@ -214,6 +214,23 @@ export const applicationsApi = {
     fetchApi<null>(`/api/applications/${id}`, {
       method: 'DELETE',
     }),
+  addEvent: (id: string, payload: ApplicationEventPayload) =>
+    fetchApi<ApplicationRecord>(`/api/applications/${id}/events`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  removeEvent: (id: string, eventId: string) =>
+    fetchApi<null>(`/api/applications/${id}/events/${eventId}`, {
+      method: 'DELETE',
+    }),
+  exportUrl: (params: ApplicationListParams = {}) => {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    })
+    const suffix = query.toString() ? `?${query.toString()}` : ''
+    return `${API_BASE}/api/applications/export${suffix}`
+  },
 }
 
 export const jobsApi = {
@@ -350,6 +367,45 @@ export const APPLICATION_JOB_TYPE_LABELS: Record<ApplicationJobType, string> = {
   contract: 'Contract',
 };
 
+export type ApplicationRegion =
+  | 'us'
+  | 'uk'
+  | 'canada'
+  | 'australia'
+  | 'hong_kong'
+  | 'mainland_china'
+  | 'singapore'
+  | 'other';
+
+export type ApplicationEventKind = 'applied' | 'assessment' | 'interview' | 'offer' | 'rejected';
+
+export const APPLICATION_REGION_LABELS: Record<ApplicationRegion, string> = {
+  us: 'United States',
+  uk: 'United Kingdom',
+  canada: 'Canada',
+  australia: 'Australia',
+  hong_kong: 'Hong Kong',
+  mainland_china: 'Mainland China',
+  singapore: 'Singapore',
+  other: 'Other',
+};
+
+export const APPLICATION_EVENT_LABELS: Record<ApplicationEventKind, string> = {
+  applied: 'Applied',
+  assessment: 'OA / Assessment',
+  interview: 'Interview',
+  offer: 'Offer',
+  rejected: 'Rejected',
+};
+
+export interface ApplicationEvent {
+  id: string;
+  kind: ApplicationEventKind;
+  occurred_on: string;
+  label?: string;
+  note?: string;
+}
+
 export interface ApplicationRecord {
   id: string;
   company_name: string;
@@ -358,8 +414,10 @@ export interface ApplicationRecord {
   job_url?: string;
   job_type?: ApplicationJobType;
   season?: string;
+  region?: ApplicationRegion;
   channel: ApplicationChannel;
   status: ApplicationStatus;
+  events: ApplicationEvent[];
   applied_at?: string;
   notes?: string;
   opportunity_id?: string;
@@ -379,7 +437,9 @@ export interface ApplicationListParams {
   status?: ApplicationStatus;
   job_type?: ApplicationJobType;
   channel?: ApplicationChannel;
+  region?: ApplicationRegion;
   search?: string;
+  search_field?: 'company' | 'role';
   limit?: number;
   offset?: number;
 }
@@ -392,10 +452,18 @@ export interface ApplicationCreatePayload {
   job_url?: string;
   job_type?: ApplicationJobType;
   season?: string;
+  region?: ApplicationRegion;
   channel: ApplicationChannel;
   status: ApplicationStatus;
   applied_at?: string;
   notes?: string;
+}
+
+export interface ApplicationEventPayload {
+  kind: ApplicationEventKind;
+  occurred_on: string;
+  label?: string;
+  note?: string;
 }
 
 export type ApplicationUpdatePayload = Partial<Omit<ApplicationCreatePayload, 'user_job_match_id'>>;

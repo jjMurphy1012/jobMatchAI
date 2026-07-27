@@ -1,9 +1,9 @@
 from collections import deque
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
-from app.core.enums import ApplicationChannel, ApplicationStatus
+from app.core.enums import ApplicationChannel, ApplicationEventKind, ApplicationStatus
 from app.models.models import Application, Opportunity, UserJobMatch
 from app.services.application_service import (
     ApplicationError,
@@ -83,7 +83,9 @@ async def test_manual_entry_snapshots_the_typed_details():
     # No job in the system to point at, and that is a valid state.
     assert application.opportunity_id is None
     assert application.user_job_match_id is None
-    assert session.flushes == 1
+    # The submission is seeded as the first timeline entry.
+    assert [event.kind for event in application.events] == [ApplicationEventKind.APPLIED]
+    assert application.events[0].label == ApplicationChannel.REFERRAL
 
 
 @pytest.mark.asyncio
@@ -263,3 +265,118 @@ async def test_backfilling_a_stage_stamps_a_missing_applied_date():
     )
 
     assert updated.applied_at is not None
+
+
+@pytest.mark.asyncio
+async def test_saved_application_has_no_timeline_yet():
+    session = FakeSession()
+
+    application = await ApplicationService().create(
+        session,
+        "user-1",
+        ApplicationInput(
+            company_name="Stripe",
+            job_title="Backend Engineer",
+            status=ApplicationStatus.SAVED,
+        ),
+    )
+
+    assert application.events == []
+
+
+@pytest.mark.asyncio
+async def test_adding_a_stage_event_moves_the_application_to_that_stage():
+    session = FakeSession()
+    application = Application(
+        id="app-1",
+        user_id="user-1",
+        company_name="Acme",
+        job_title="Backend Engineer",
+        status=ApplicationStatus.APPLIED,
+    )
+
+    updated = await ApplicationService().add_event(
+        session,
+        application,
+        kind=ApplicationEventKind.ASSESSMENT,
+        occurred_on=date(2026, 7, 23),
+        label="Online Test",
+    )
+
+    assert updated.status == ApplicationStatus.ASSESSMENT
+    assert updated.events[-1].occurred_on == date(2026, 7, 23)
+    assert updated.events[-1].label == "Online Test"
+
+
+@pytest.mark.asyncio
+async def test_several_interview_rounds_are_kept_as_separate_events():
+    session = FakeSession()
+    application = Application(id="app-1", user_id="user-1", company_name="Acme", job_title="Engineer")
+    service = ApplicationService()
+
+    await service.add_event(
+        session, application, kind=ApplicationEventKind.INTERVIEW,
+        occurred_on=date(2026, 8, 1), label="Round 1",
+    )
+    await service.add_event(
+        session, application, kind=ApplicationEventKind.INTERVIEW,
+        occurred_on=date(2026, 8, 8), label="Round 2",
+    )
+
+    assert [event.label for event in application.events] == ["Round 1", "Round 2"]
+    assert application.status == ApplicationStatus.INTERVIEWING
+
+
+@pytest.mark.asyncio
+async def test_deleting_an_event_reports_whether_it_existed():
+    session = FakeSession()
+    application = Application(id="app-1", user_id="user-1", company_name="Acme", job_title="Engineer")
+    await ApplicationService().add_event(
+        session, application, kind=ApplicationEventKind.INTERVIEW, occurred_on=date(2026, 8, 1),
+    )
+    application.events[0].id = "event-1"
+
+    assert await ApplicationService().delete_event(session, application, "event-1") is True
+    assert application.events == []
+    assert await ApplicationService().delete_event(session, application, "event-1") is False
+
+
+@pytest.mark.asyncio
+async def test_region_is_inferred_from_the_location_when_not_given():
+    session = FakeSession()
+
+    application = await ApplicationService().create(
+        session,
+        "user-1",
+        ApplicationInput(company_name="Acme", job_title="Engineer", location="Boston, MA"),
+    )
+
+    assert application.region == "us"
+
+
+@pytest.mark.asyncio
+async def test_explicit_region_beats_the_guess():
+    session = FakeSession()
+
+    application = await ApplicationService().create(
+        session,
+        "user-1",
+        ApplicationInput(
+            company_name="Acme", job_title="Engineer", location="Boston, MA", region="uk",
+        ),
+    )
+
+    assert application.region == "uk"
+
+
+@pytest.mark.asyncio
+async def test_unrecognised_location_leaves_the_region_unset():
+    session = FakeSession()
+
+    application = await ApplicationService().create(
+        session,
+        "user-1",
+        ApplicationInput(company_name="Acme", job_title="Engineer", location="Atlantis"),
+    )
+
+    assert application.region is None
